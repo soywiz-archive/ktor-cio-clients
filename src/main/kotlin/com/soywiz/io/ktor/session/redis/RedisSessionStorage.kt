@@ -25,7 +25,15 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
     }
 
     override suspend fun <R> read(id: String, consumer: suspend (ByteReadChannel) -> R): R {
-        return consumer(ByteReadChannel((redis.get(buildKey(id)) ?: "").hex))
+        val key = buildKey(id)
+        val result = redis.get(key)
+        //println("REDIS READ: '$result'")
+        if (result != null) {
+            redis.expire(key, ttlSeconds) // Refresh
+            return consumer(ByteReadChannel(result.hex))
+        } else {
+            throw NoSuchElementException("Session $id not found") // @TODO: This seems to be thrown and not catched, so once expired, it fails before reaching routing at all
+        }
     }
 
     override suspend fun write(id: String, provider: suspend (ByteWriteChannel) -> Unit) {
@@ -37,7 +45,9 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
                 if (read <= 0) break
                 data.write(temp, 0, read)
             }
-            redis.set(buildKey(id), data.toByteArray().hex)
+            val key = buildKey(id)
+            redis.set(key, data.toByteArray().hex)
+            redis.expire(key, ttlSeconds)
         }.channel)
     }
 
@@ -53,8 +63,8 @@ internal object RedisSessionStorageSpike {
 
         embeddedServer(Netty, 8080) {
             install(Sessions) {
-                val cookieName = "SESSION2"
-                val sessionStorage = RedisSessionStorage(redis)
+                val cookieName = "SESSION4"
+                val sessionStorage = RedisSessionStorage(redis, ttlSeconds = 10)
                 cookie<TestSession>(cookieName, sessionStorage)
                 //header<TestUserSession>(cookieName, sessionStorage) {
                 //    transform(SessionTransportTransformerDigest())
@@ -62,17 +72,18 @@ internal object RedisSessionStorageSpike {
             }
             routing {
                 get("/") {
-                    val ses = call.sessions.get<TestSession>() ?: TestSession()
+                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
                     call.sessions.set(TestSession(ses.visits + 1))
                     call.respondText("hello: " + ses)
                 }
                 get("/set") {
-                    val ses = call.sessions.get<TestSession>() ?: TestSession()
+                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
                     call.sessions.set(TestSession(ses.visits + 1))
                     call.respondText("ok")
                 }
                 get("/get") {
-                    call.respondText("ok: " + call.sessions.get<TestSession>())
+                    //call.respondText("ok: " + call.sessions.getOrNull<TestSession>())
+                    call.respondText("ok")
                 }
             }
         }.apply {
@@ -80,3 +91,5 @@ internal object RedisSessionStorageSpike {
         }
     }
 }
+
+inline fun <reified T> CurrentSession.getOrNull(): T? = try { get(findName(T::class)) as T? } catch (e: NoSuchElementException) { null }

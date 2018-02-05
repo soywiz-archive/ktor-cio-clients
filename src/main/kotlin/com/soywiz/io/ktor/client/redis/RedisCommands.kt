@@ -13,6 +13,7 @@ suspend fun RedisCommand.set(key: String, value: String) = commandString("set", 
 suspend fun RedisCommand.get(key: String) = commandString("get", key)
 suspend fun RedisCommand.del(vararg keys: String) = commandString("del", *keys)
 suspend fun RedisCommand.echo(msg: String) = commandString("echo", msg)
+suspend fun RedisCommand.expire(key: String, time: Int) = commandString("expire", key, time)
 
 
 suspend fun RedisCommand.hset(key: String, member: String, value: String): Long = commandLong("hset", key, member, value)
