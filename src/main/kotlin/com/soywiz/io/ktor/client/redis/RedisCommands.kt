@@ -1,6 +1,6 @@
 package com.soywiz.io.ktor.client.redis
 
-// @TODO: Missing commands
+// @TODO: Missing commands & generate
 
 suspend fun RedisCommand.append(key: String, value: String) = commandString("append", key, value)
 suspend fun RedisCommand.auth(password: String) = commandString("auth", password)

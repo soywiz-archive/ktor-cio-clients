@@ -1,6 +1,6 @@
 package com.soywiz.io.ktor.client.redis
 
-// @TODO: Missing commands
+// @TODO: Missing commands & generate
 
 fun RedisCommand.key(key: String) = RedisKey(this, key)
 
