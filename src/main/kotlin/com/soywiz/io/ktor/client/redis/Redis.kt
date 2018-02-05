@@ -13,7 +13,8 @@ private const val DEBUG = false
 class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private val clientFactory: suspend () -> Client) :
     RedisCommand {
     companion object {
-        suspend operator fun invoke(
+        //suspend operator fun invoke(
+        operator fun invoke(
             hosts: List<String> = listOf("127.0.0.1:6379"),
             maxConnections: Int = 50,
             charset: Charset = Charsets.UTF_8,
@@ -41,7 +42,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                     charset = charset,
                     stats = stats
                 ).apply {
-                    init()
+                    //init()
                 }
             }
         }
@@ -64,22 +65,25 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
     }
 
     class Client(
-        val reader: AsyncInputStream,
-        val writer: AsyncOutputStream,
-        val closeable: AsyncCloseable,
-        val charset: Charset = Charsets.UTF_8,
-        val stats: Stats = Stats(),
-        val reconnect: suspend (Client) -> Unit = {}
+        private val reader: AsyncInputStream,
+        private val writer: AsyncOutputStream,
+        private val closeable: AsyncCloseable,
+        private val charset: Charset = Charsets.UTF_8,
+        private val stats: Stats = Stats(),
+        private val reconnect: suspend (Client) -> Unit = {}
     ) : RedisCommand {
         suspend fun close() = this.closeable.close()
 
+        private val initOnce = Once()
         private val commandQueue = AsyncQueue()
 
-        internal suspend fun init() {
-            commandQueue {
-                try {
-                    reconnect(this@Client)
-                } catch (e: IOException) {
+        private suspend fun initOnce() {
+            initOnce {
+                commandQueue {
+                    try {
+                        reconnect(this@Client)
+                    } catch (e: IOException) {
+                    }
                 }
             }
         }
@@ -117,11 +121,12 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
 
         val maxRetries = 10
 
-        inline private fun debug(msg: () -> String) {
+        private inline fun debug(msg: () -> String) {
             if (DEBUG) println(msg())
         }
 
         override suspend fun commandAny(vararg args: Any?): Any? {
+            initOnce()
             //println(args.toList())
             stats.commandsQueued.incrementAndGet()
             return commandQueue {
