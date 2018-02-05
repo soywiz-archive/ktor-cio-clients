@@ -50,3 +50,4 @@ suspend fun RedisCommand.hgetall(key: String): Map<String, String> {
 suspend fun RedisCommand.zrevrange(key: String, start: Long, stop: Long): Map<String, Double> {
     return commandArray("zrevrange", key, start, stop, "WITHSCORES").listOfPairsToMap().mapValues { "${it.value}".toDouble() }
 }
+
