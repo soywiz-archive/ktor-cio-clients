@@ -17,12 +17,11 @@ import java.io.ByteArrayOutputStream
 // @TODO: Ask: Could this be the default interface since Sessions are going to be small
 // @TODO: Ask: and most of the time (de)serialized in-memory
 abstract class SimplifiedSessionStorage : SessionStorage {
-    abstract suspend fun delete(id: String): Unit
     abstract suspend fun read(id: String): ByteArray?
-    abstract suspend fun write(id: String, data: ByteArray): Unit
+    abstract suspend fun write(id: String, data: ByteArray?): Unit
 
     override suspend fun invalidate(id: String) {
-        delete(id)
+        write(id, null)
     }
 
     override suspend fun <R> read(id: String, consumer: suspend (ByteReadChannel) -> R): R {
@@ -48,21 +47,21 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
     SimplifiedSessionStorage() {
     private fun buildKey(id: String) = "$prefix$id"
 
-    override suspend fun delete(id: String) {
-        redis.del(buildKey(id))
-    }
-
     override suspend fun read(id: String): ByteArray? {
         val key = buildKey(id)
         return redis.get(key)?.hex?.apply {
-            redis.expire(key, ttlSeconds)
+            redis.expire(key, ttlSeconds) // refresh
         }
     }
 
-    override suspend fun write(id: String, data: ByteArray) {
+    override suspend fun write(id: String, data: ByteArray?) {
         val key = buildKey(id)
-        redis.set(key, data.hex)
-        redis.expire(key, ttlSeconds)
+        if (data == null) {
+            redis.del(buildKey(id))
+        } else {
+            redis.set(key, data.hex)
+            redis.expire(key, ttlSeconds)
+        }
     }
 }
 
