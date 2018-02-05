@@ -46,7 +46,7 @@ object RedisCommands {
             1,
             "2.6.0",
             PARAMS(STR("key"), OPTIONAL(INT("start"), INT("end"))),
-            RET_TODO
+            RET_LONG
         )
         , Command(
             "BITFIELD",

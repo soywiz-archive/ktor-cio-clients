@@ -13,27 +13,21 @@ import kotlinx.coroutines.experimental.io.ByteReadChannel
 import kotlinx.coroutines.experimental.io.ByteWriteChannel
 import kotlinx.coroutines.experimental.io.reader
 import java.io.ByteArrayOutputStream
-import java.io.Closeable
 
-// @TODO: TTL + Strategy
-class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val ttlSeconds: Int = 3600) :
-    SessionStorage, Closeable {
-    private fun buildKey(id: String) = "$prefix$id"
+// @TODO: Ask: Could this be the default interface since Sessions are going to be small
+// @TODO: Ask: and most of the time (de)serialized in-memory
+abstract class SimplifiedSessionStorage : SessionStorage {
+    abstract suspend fun delete(id: String): Unit
+    abstract suspend fun read(id: String): ByteArray?
+    abstract suspend fun write(id: String, data: ByteArray): Unit
 
     override suspend fun invalidate(id: String) {
-        redis.del(buildKey(id))
+        delete(id)
     }
 
     override suspend fun <R> read(id: String, consumer: suspend (ByteReadChannel) -> R): R {
-        val key = buildKey(id)
-        val result = redis.get(key)
-        //println("REDIS READ: '$result'")
-        if (result != null) {
-            redis.expire(key, ttlSeconds) // Refresh
-            return consumer(ByteReadChannel(result.hex))
-        } else {
-            throw NoSuchElementException("Session $id not found") // @TODO: This seems to be thrown and not catched, so once expired, it fails before reaching routing at all
-        }
+        val data = read(id) ?: throw NoSuchElementException("Session $id not found")
+        return consumer(ByteReadChannel(data))
     }
 
     override suspend fun write(id: String, provider: suspend (ByteWriteChannel) -> Unit) {
@@ -45,20 +39,38 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
                 if (read <= 0) break
                 data.write(temp, 0, read)
             }
-            val key = buildKey(id)
-            redis.set(key, data.toByteArray().hex)
-            redis.expire(key, ttlSeconds)
+            write(id, data.toByteArray())
         }.channel)
     }
+}
 
-    override fun close() {
+class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val ttlSeconds: Int = 3600) :
+    SimplifiedSessionStorage() {
+    private fun buildKey(id: String) = "$prefix$id"
+
+    override suspend fun delete(id: String) {
+        redis.del(buildKey(id))
+    }
+
+    override suspend fun read(id: String): ByteArray? {
+        val key = buildKey(id)
+        return redis.get(key)?.hex?.apply {
+            redis.expire(key, ttlSeconds)
+        }
+    }
+
+    override suspend fun write(id: String, data: ByteArray) {
+        val key = buildKey(id)
+        redis.set(key, data.hex)
+        redis.expire(key, ttlSeconds)
     }
 }
 
 internal object RedisSessionStorageSpike {
     data class TestSession(val visits: Int = 0)
 
-    @JvmStatic fun main(args: Array<String>) {
+    @JvmStatic
+    fun main(args: Array<String>) {
         val redis = Redis()
 
         embeddedServer(Netty, 8080) {
@@ -92,4 +104,8 @@ internal object RedisSessionStorageSpike {
     }
 }
 
-inline fun <reified T> CurrentSession.getOrNull(): T? = try { get(findName(T::class)) as T? } catch (e: NoSuchElementException) { null }
+inline fun <reified T> CurrentSession.getOrNull(): T? = try {
+    get(findName(T::class)) as T?
+} catch (e: NoSuchElementException) {
+    null
+}
