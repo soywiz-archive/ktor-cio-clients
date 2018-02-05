@@ -231,6 +231,7 @@ interface AsyncCloseable {
 interface AsyncInputStream {
     //suspend fun readBytesUpTo(count: Int): ByteArray
     suspend fun read(): Int
+
     suspend fun skip(count: Int): Unit
     suspend fun readUntil(b: Byte): ByteArray
     suspend fun readBytesUpTo(buffer: ByteArray, offset: Int = 0, size: Int = buffer.size - offset): Int
@@ -245,8 +246,8 @@ interface AsyncOutputStream {
 
 class AsyncClient(val bufferSize: Int = 0x1000) : AsyncInputStream, AsyncOutputStream, AsyncCloseable {
     private var sc = AsynchronousSocketChannel.open()
-    private val temp = CircularByteArray(32 - Integer.numberOfLeadingZeros(bufferSize))
-    val buffer = ByteBuffer.allocate(temp.writeAvailable)
+    private val cb = CircularByteArray(32 - Integer.numberOfLeadingZeros(bufferSize))
+    private val buffer = ByteBuffer.allocate(cb.writeAvailable)
 
     suspend fun connect(host: String, port: Int) = suspendCoroutine<Unit> { c ->
         //sc.close()
@@ -262,17 +263,17 @@ class AsyncClient(val bufferSize: Int = 0x1000) : AsyncInputStream, AsyncOutputS
 
     override suspend fun read(): Int {
         fillBufferIfRequired()
-        return if (temp.readAvailable > 0) (temp.get().toInt() and 0xFF) else -1
+        return if (cb.readAvailable > 0) (cb.get().toInt() and 0xFF) else -1
     }
 
     override suspend fun readUntil(b: Byte): ByteArray {
         val out = ByteArrayOutputStream()
         while (true) {
-            if (temp.readAvailable < 1) {
+            if (cb.readAvailable < 1) {
                 fillBufferIfRequired()
-                if (temp.readAvailable < 1) break // end of stream
+                if (cb.readAvailable < 1) break // end of stream
             }
-            val c = temp.get()
+            val c = cb.get()
             if (c == b) break
             out.write(c.toInt())
         }
@@ -283,8 +284,8 @@ class AsyncClient(val bufferSize: Int = 0x1000) : AsyncInputStream, AsyncOutputS
         var pending = count
         while (pending > 0) {
             fillBufferIfRequired(pending)
-            val chunk = Math.min(pending, temp.readAvailable)
-            temp.skip(chunk)
+            val chunk = Math.min(pending, cb.readAvailable)
+            cb.skip(chunk)
             pending -= chunk
         }
         //readBytesExact(count)
@@ -292,18 +293,20 @@ class AsyncClient(val bufferSize: Int = 0x1000) : AsyncInputStream, AsyncOutputS
 
     override suspend fun readBytesUpTo(buffer: ByteArray, offset: Int, size: Int): Int {
         fillBufferIfRequired()
-        val read = Math.min(temp.readAvailable, size)
-        this.temp.get(buffer, offset, read)
+        val read = Math.min(cb.readAvailable, size)
+        this.cb.get(buffer, offset, read)
         return read
     }
 
     suspend private fun fillBufferIfRequired(required: Int = 1) {
-        if (temp.readAvailable < required) {
+        if (cb.readAvailable < required) {
             buffer.clear()
-            buffer.limit(temp.writeAvailable)
+            buffer.limit(cb.writeAvailable)
             return suspendCoroutine { c ->
                 sc.read(buffer, this, object : CompletionHandler<Int, AsyncClient> {
-                    override fun completed(result: Int, attachment: AsyncClient) = c.resume(temp.put(buffer.apply { flip() }, result))
+                    override fun completed(result: Int, attachment: AsyncClient) =
+                        c.resume(cb.put(buffer.apply { flip() }, result))
+
                     override fun failed(exc: Throwable, attachment: AsyncClient) = c.resumeWithException(exc)
                 })
             }
@@ -335,52 +338,66 @@ suspend fun AsyncInputStream.readBytesExact(count: Int): ByteArray {
 }
 
 class CircularByteArray(private val capacityBits: Int) {
-    private val capacity = (1 shl capacityBits)
+    init {
+        if (capacityBits !in 1 until 30) throw IOException("Invalid capacityBits $capacityBits")
+    }
+    private val capacity = (1 shl (capacityBits - 1))
     private val mask = capacity - 1
     private val data = ByteArray(capacity)
     private var readPos: Int = 0
     private var writePos: Int = 0
-    val readAvailable: Int get() = if (writePos >= readPos) writePos - readPos else capacity + (writePos - readPos)
-    //val readAvailable: Int get() = writePos - readPos
+    var readAvailable: Int = 0; private set
     val writeAvailable: Int get() = capacity - readAvailable
 
     fun skip(count: Int) {
-        if (readAvailable < count) throw IOException("Buffer is empty")
+        if (count > readAvailable) throw IOException("Buffer is empty")
         readPos = (readPos + count) and mask
+        readAvailable -= count
     }
 
     fun get(): Byte {
         if (readAvailable < 1) throw IOException("Buffer is empty")
-        return data[readPos++ and mask].apply {
-            readPos = readPos and mask
+        return data[readPos].apply {
+            readPos = (readPos + 1) and mask
+            readAvailable -= 1
         }
     }
 
     fun get(v: ByteArray, offset: Int = 0, size: Int = v.size - offset) {
-        if (readAvailable < size) throw IOException("Buffer is empty")
+        if (size > readAvailable) throw IOException("Buffer is empty")
         // @TODO: Up to two arraycopy
-        for (n in 0 until size) v[offset + n] = data[readPos++ and mask]
-        readPos = readPos and mask
+        for (n in 0 until size) {
+            v[offset + n] = data[readPos]
+            readPos = (readPos + 1) and mask
+        }
+        readAvailable -= size
     }
 
     fun put(v: Byte) {
         if (writeAvailable < 1) throw IOException("Buffer is full")
-        data[writePos++ and mask] = v
-        writePos = writePos and mask
+        data[writePos] = v
+        writePos = (writePos + 1) and mask
+        readAvailable += 1
     }
 
     fun put(v: ByteArray, offset: Int = 0, size: Int = v.size - offset) {
-        if (writeAvailable < size) throw IOException("Buffer is full")
+        if (size > writeAvailable) throw IOException("Buffer is full")
         // @TODO: Up to two arraycopy
-        for (n in 0 until size) data[writePos++ and mask] = v[offset + n]
-        writePos = writePos and mask
+        for (n in 0 until size) {
+            data[writePos] = v[offset + n]
+            writePos = (writePos + 1) and mask
+        }
+        readAvailable += size
     }
 
     fun put(v: ByteBuffer, size: Int) {
-        if (writeAvailable < size) throw IOException("Buffer is full")
+        if (size > writeAvailable) throw IOException("Buffer is full")
         // @TODO: Up to two get
-        for (n in 0 until size) data[writePos++ and mask] = v.get()
-        writePos = writePos and mask
+        for (n in 0 until size) {
+            data[writePos] = v.get()
+            writePos = (writePos + 1) and mask
+        }
+        readAvailable += size
     }
 }
 
@@ -500,7 +517,8 @@ internal object RedisExperiment {
     @JvmStatic
     fun main(args: Array<String>): Unit {
         runBlocking {
-            val redis = Redis()
+            val redis = Redis(bufferSize = 1)
+            //val redis = Redis(bufferSize = 3)
             redis.set("a", "hello")
             println(redis.get("a"))
         }
