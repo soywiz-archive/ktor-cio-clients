@@ -5,6 +5,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class RedisIntegrationTest {
     //EVAL "return redis.call('del', unpack(redis.call('keys', ARGV[1])))" 0 prefix:*
@@ -30,6 +31,15 @@ class RedisIntegrationTest {
         redis.set(key1, myvalue)
         assertEquals(myvalue, redis.get(key1))
         redis.del(key1)
+    }
+
+    @Test
+    fun authTest(): Unit = redisTest {
+        assertFailsWith<Redis.ResponseException> {
+            runBlocking {
+                redis.auth("not the right password")
+            }
+        }
     }
 
     private fun redisTest(callback: suspend () -> Unit) {
