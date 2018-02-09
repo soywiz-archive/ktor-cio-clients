@@ -1,6 +1,7 @@
-package com.soywiz.io.ktor.session.redis
+package com.soywiz.io.ktor.sessions.redis
 
 import com.soywiz.io.ktor.client.redis.*
+import com.soywiz.io.ktor.client.util.*
 import io.ktor.application.call
 import io.ktor.application.install
 import io.ktor.response.respondText

@@ -1,4 +1,4 @@
-package com.soywiz.io.ktor.session.redis
+package com.soywiz.io.ktor.sessions.redis
 
 import com.soywiz.io.ktor.client.redis.Redis
 import io.ktor.application.Application
