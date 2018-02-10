@@ -283,6 +283,7 @@ class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index
     var createdItems = AtomicInteger()
     private val freedItem = LinkedList<T>()
     private val waiters = LinkedList<Deferred<Unit>>()
+    val availableFreed: Int get() = synchronized(freedItem) { freedItem.size }
 
     suspend fun <TR> tempAlloc(callback: suspend (T) -> TR): TR {
         val item = alloc()
