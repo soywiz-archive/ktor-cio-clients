@@ -1,5 +1,6 @@
 package com.soywiz.io.ktor.client.mysql
 
+import com.soywiz.io.ktor.client.util.*
 import kotlinx.coroutines.experimental.*
 
 class MysqlTest {
@@ -7,14 +8,17 @@ class MysqlTest {
         @JvmStatic
         fun main(args: Array<String>) {
             runBlocking {
-                val mysql = Mysql()
-                //val rows = mysql.query("SELECT 1;")
-                //val rows = mysql.query("SELECT NOW();")
-                val rows = mysql.query("SELECT NULL, 1, NOW();")
-                for (row in rows) {
-                    println(row)
+                Mysql().use { mysql ->
+                    mysql.query("CREATE DATABASE IF NOT EXISTS mytest;")
+                    mysql.useDatabase("mytest")
+                    mysql.query("CREATE TABLE IF NOT EXISTS mytable (demo INT, demo2 VARCHAR(64));")
+                    mysql.query("INSERT INTO mytable (demo, demo2) VALUES (1, 'hello world')")
+                    mysql.query("INSERT INTO mytable (demo, demo2) VALUES (1, 'hello world')")
+                    for (row in mysql.query("SELECT * from mytable")) {
+                        println(row)
+                    }
+                    println(mysql.query("SELECT NOW();").first().date(0))
                 }
-                mysql.close()
             }
         }
     }

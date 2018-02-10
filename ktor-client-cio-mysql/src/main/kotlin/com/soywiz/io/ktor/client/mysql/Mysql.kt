@@ -5,6 +5,7 @@ import java.io.*
 import java.math.*
 import java.nio.charset.*
 import java.text.*
+import java.util.*
 import kotlin.math.*
 
 data class MysqlColumn(
@@ -61,11 +62,22 @@ data class MysqlColumns(val columns: List<MysqlColumn> = listOf()) : Collection<
     val columnIndex = columns.withIndex().map { it.value.columnAlias to it.index }.toMap()
 }
 
-data class MysqlRow(val columns: MysqlColumns, val data: List<Any?>) {
+data class MysqlRow(val columns: MysqlColumns, val data: List<Any?>) : List<Any?> by data {
     fun raw(name: String): Any? = columns.columnIndex[name]?.let { data[it] }
     fun int(name: String): Int? = (raw(name) as? Number?)?.toInt()
     fun long(name: String): Long? = (raw(name) as? Number?)?.toLong()
     fun double(name: String): Double? = (raw(name) as? Number?)?.toDouble()
+    fun string(name: String): String? = (raw(name))?.toString()
+    fun byteArray(name: String): ByteArray? = raw(name) as? ByteArray?
+    fun date(name: String): Date? = raw(name) as? Date?
+
+    fun raw(index: Int): Any? = data.getOrNull(index)
+    fun int(index: Int): Int? = (raw(index) as? Number?)?.toInt()
+    fun long(index: Int): Long? = (raw(index) as? Number?)?.toLong()
+    fun double(index: Int): Double? = (raw(index) as? Number?)?.toDouble()
+    fun string(index: Int): String? = (raw(index))?.toString()
+    fun byteArray(index: Int): ByteArray? = raw(index) as? ByteArray?
+    fun date(index: Int): Date? = raw(index) as? Date?
 
     override fun toString(): String =
         "MysqlRow(" + columns.zip(data).map { "${it.first.columnAlias}=${it.second}" }.joinToString(", ") + ")"
@@ -85,12 +97,41 @@ fun MysqlRows(columns: MysqlColumns, list: List<MysqlRow>): MysqlRows {
     }
 }
 
-class MysqlException(val code: Int, message: String) : Exception(message)
-
-interface Mysql {
-    suspend fun query(query: String): MysqlRows
-    suspend fun close(): Unit
+class MysqlException(val errorCode: Int, val sqlState: String, message: String) : Exception(message) {
+    override fun toString(): String = "MysqlException($errorCode, '$sqlState', '$message')"
 }
+
+interface Mysql : AsyncCloseable {
+    suspend fun query(query: String): MysqlRows
+    override suspend fun close(): Unit
+}
+
+// https://dev.mysql.com/doc/refman/5.7/en/string-literals.html#character-escape-sequences
+fun String.mysqlEscape(): String {
+    var out = ""
+    for (c in this) {
+        when (c) {
+            '\u0000' -> out += "\\0"
+            '\'' -> out += "\\'"
+            '\"' -> out += "\\\""
+            '\b' -> out += "\\b"
+            '\n' -> out += "\\n"
+            '\r' -> out += "\\r"
+            '\t' -> out += "\\t"
+            '\u0026' -> out += "\\Z"
+            '\\' -> out += "\\\\"
+            '%' -> out += "\\%"
+            '_' -> out += "\\_"
+            '`' -> out += "\\`"
+            else -> out += c
+        }
+    }
+    return out
+}
+fun String.mysqlQuote(): String = "'${this.mysqlEscape()}'"
+fun String.mysqlTableQuote(): String = "`${this.mysqlEscape()}`"
+
+suspend fun Mysql.useDatabase(name: String) = query("USE ${name.mysqlTableQuote()};")
 
 fun Mysql(
     host: String = "127.0.0.1",
@@ -346,9 +387,15 @@ class MysqlClient private constructor(
                     val maxStage = readU8()
                     val progress = readU24_le()
                     val progressInfo = readLenencString(charset)
-                    throw MysqlException(errorCode, progressInfo)
+                    throw MysqlException(errorCode, "", progressInfo)
                 } else {
-                    throw MysqlException(errorCode, readEofString(charset))
+                    var str = readEofString(charset)
+                    var sqlState = ""
+                    if (str.startsWith('#')) {
+                        sqlState = str.substring(1, 6)
+                        str = str.substring(6)
+                    }
+                    throw MysqlException(errorCode, sqlState, str)
                 }
             }
             else -> { // ResultSet
@@ -390,7 +437,11 @@ class MysqlClient private constructor(
                         rows += readPacket { packet ->
                             val cells = arrayListOf<Any?>()
                             for (column in columns) {
-                                val data = try { readLenencBytes() } catch (e: NullPointerException) { null }
+                                val data = try {
+                                    readLenencBytes()
+                                } catch (e: NullPointerException) {
+                                    null
+                                }
                                 //println("DATA: ${column.fieldType}, $data")
                                 //column.fieldDetailFlag and MysqlFieldDetail.NOT_NULL
                                 cells += if (data == null) null else when (column.fieldType) {
@@ -438,6 +489,7 @@ class MysqlClient private constructor(
     }
 
     override suspend fun query(query: String): MysqlRows {
+        // @TODO: Wait/force completion of the previous query
         packetNum = 0
         writeQuery(query)
         return readResponse()
