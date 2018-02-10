@@ -279,7 +279,7 @@ class AsyncQueue {
     }
 }
 
-class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend () -> T) {
+class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index: Int) -> T) {
     var createdItems = AtomicInteger()
     private val freedItem = LinkedList<T>()
     private val waiters = LinkedList<Deferred<Unit>>()
@@ -307,8 +307,8 @@ class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend () -> 
 
             // If we don't have an available item yet and we can create more, just create one
             if (createdItems.get() < maxItems) {
-                createdItems.addAndGet(1)
-                return create()
+                val index = createdItems.getAndAdd(1)
+                return create(index)
             }
             // If we shouldn't create more items and we don't have more, just await for one to be freed.
             else {
