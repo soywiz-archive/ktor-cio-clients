@@ -51,10 +51,10 @@ class AsyncClient(val bufferSize: Int = 0x1000) : AsyncInputStream,
     private val cb = CircularByteArray(32 - Integer.numberOfLeadingZeros(bufferSize))
     private val buffer = ByteBuffer.allocate(cb.writeAvailable)
 
-    suspend fun connect(host: String, port: Int) = suspendCoroutine<Unit> { c ->
+    suspend fun connect(host: String, port: Int) = suspendCoroutine<AsyncClient> { c ->
         //sc.close()
         sc.connect(InetSocketAddress(host, port), this, object : CompletionHandler<Void, AsyncClient> {
-            override fun completed(result: Void?, attachment: AsyncClient) = c.resume(Unit)
+            override fun completed(result: Void?, attachment: AsyncClient) = c.resume(this@AsyncClient)
             override fun failed(exc: Throwable, attachment: AsyncClient) = c.resumeWithException(exc)
         })
     }
@@ -466,6 +466,23 @@ open class ProduceConsumer<T> : Consumer<T>, Producer<T> {
         flush()
     }
 }
+
+
+interface SuspendingIterator<out T> {
+    suspend operator fun hasNext(): Boolean
+    suspend operator fun next(): T
+}
+
+interface SuspendingSequence<out T> {
+    operator fun iterator(): SuspendingIterator<T>
+}
+
+suspend fun <T> SuspendingIterator<out T>.toList(): List<T> {
+    val out = arrayListOf<T>()
+    while (this.hasNext()) out += this.next()
+    return out
+}
+
 
 /*
 fun String.toByteArray(): ByteArray {

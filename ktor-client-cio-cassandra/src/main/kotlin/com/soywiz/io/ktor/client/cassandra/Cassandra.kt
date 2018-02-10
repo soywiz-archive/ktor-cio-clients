@@ -497,56 +497,11 @@ class Cassandra private constructor(
     }
 }
 
-private fun ByteArray.openSync(): ByteArrayInputStream {
-    return ByteArrayInputStream(this)
-}
-
-private fun ByteArrayInputStream.readS8(): Int = readU8().toByte().toInt()
-
-private fun ByteArrayInputStream.readU8(): Int = this.read() and 0xFF
-
-private fun ByteArrayInputStream.readS16_be(): Int = readU16_be().toShort().toInt()
-
-private fun ByteArrayInputStream.readU16_be(): Int = ((this.read() shl 8) or (this.read() shl 0))
-
-private fun ByteArrayInputStream.readS32_be(): Int =
-    (this.read() shl 24) or (this.read() shl 16) or (this.read() shl 8) or (this.read() shl 0)
-
-private fun ByteArrayInputStream.readBytesExact(count: Int): ByteArray = ByteArray(count).also { read(it, 0, count) }
-
-private fun ByteArrayInputStream.readString(count: Int, charset: Charset) = this.readBytesExact(count).toString(charset)
-
 private fun ByteArrayInputStream.readCassandraColumnType(): Cassandra.ColumnType<*> = Cassandra.ColumnType.read(this)
 private fun ByteArrayInputStream.readCassandraString(): String = this.readString(this.readS16_be(), Charsets.UTF_8)
 private fun ByteArrayInputStream.readCassandraLongString(): String = this.readString(this.readS32_be(), Charsets.UTF_8)
 private fun ByteArrayInputStream.readCassandraShortBytes(): ByteArray = this.readBytesExact(this.readS16_be())
 private fun ByteArrayInputStream.readCassandraBytes(): ByteArray = this.readBytesExact(this.readS32_be())
-
-private inline fun MemorySyncStreamToByteArray(callback: ByteArrayOutputStream.() -> Unit): ByteArray {
-    val bos = ByteArrayOutputStream()
-    callback(bos)
-    return bos.toByteArray()
-}
-
-private fun ByteArrayOutputStream.write8(v: Int) {
-    this.write(v)
-}
-
-private fun ByteArrayOutputStream.write16_be(v: Int) {
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 0) and 0xFF)
-}
-
-private fun ByteArrayOutputStream.write32_be(v: Int) {
-    this.write((v ushr 24) and 0xFF)
-    this.write((v ushr 16) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 0) and 0xFF)
-}
-
-private fun ByteArrayOutputStream.writeBytes(bytes: ByteArray) {
-    this.write(bytes)
-}
 
 private fun ByteArrayOutputStream.writeCassandraString(str: String) {
     val data = str.toByteArray(Charsets.UTF_8)
