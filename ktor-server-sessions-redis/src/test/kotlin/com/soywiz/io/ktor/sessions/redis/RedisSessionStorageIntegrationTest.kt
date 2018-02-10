@@ -1,22 +1,15 @@
 package com.soywiz.io.ktor.sessions.redis
 
-import com.soywiz.io.ktor.client.redis.Redis
-import io.ktor.application.Application
-import io.ktor.application.call
-import io.ktor.application.install
-import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
-import io.ktor.response.respondText
-import io.ktor.routing.get
-import io.ktor.routing.routing
-import io.ktor.server.testing.handleRequest
-import io.ktor.server.testing.withTestApplication
-import io.ktor.sessions.Sessions
-import io.ktor.sessions.cookie
-import io.ktor.sessions.sessions
-import io.ktor.sessions.set
-import org.junit.Assert
-import org.junit.Test
+import com.soywiz.io.ktor.client.redis.*
+import io.ktor.application.*
+import io.ktor.http.*
+import io.ktor.response.*
+import io.ktor.routing.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.testing.*
+import io.ktor.sessions.*
+import org.junit.*
 
 class RedisSessionStorageIntegrationTest {
     @Test
@@ -40,6 +33,7 @@ class RedisSessionStorageIntegrationTest {
 
 private fun Application.testModule() {
     val redis = Redis()
+
     data class TestSession(val visits: Int = 0)
 
     install(Sessions) {
@@ -56,6 +50,45 @@ private fun Application.testModule() {
                 call.sessions.getOrNull<TestSession>() ?: TestSession()
             call.sessions.set(TestSession(ses.visits + 1))
             call.respondText("hello: " + ses)
+        }
+    }
+}
+
+
+internal object RedisSessionStorageSpike {
+    data class TestSession(val visits: Int = 0)
+
+    @JvmStatic
+    fun main(args: Array<String>) {
+        val redis = Redis()
+
+        embeddedServer(Netty, 8080) {
+            install(Sessions) {
+                val cookieName = "SESSION4"
+                val sessionStorage = RedisSessionStorage(redis, ttlSeconds = 10)
+                cookie<TestSession>(cookieName, sessionStorage)
+                //header<TestUserSession>(cookieName, sessionStorage) {
+                //    transform(SessionTransportTransformerDigest())
+                //}
+            }
+            routing {
+                get("/") {
+                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
+                    call.sessions.set(TestSession(ses.visits + 1))
+                    call.respondText("hello: " + ses)
+                }
+                get("/set") {
+                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
+                    call.sessions.set(TestSession(ses.visits + 1))
+                    call.respondText("ok")
+                }
+                get("/get") {
+                    //call.respondText("ok: " + call.sessions.getOrNull<TestSession>())
+                    call.respondText("ok")
+                }
+            }
+        }.apply {
+            start(wait = true)
         }
     }
 }

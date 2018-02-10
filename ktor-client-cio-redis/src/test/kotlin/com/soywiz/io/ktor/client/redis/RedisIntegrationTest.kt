@@ -1,11 +1,8 @@
 package com.soywiz.io.ktor.client.redis
 
 import kotlinx.coroutines.experimental.runBlocking
-import org.junit.After
-import org.junit.Before
-import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import org.junit.*
+import kotlin.test.*
 
 class RedisIntegrationTest {
     //EVAL "return redis.call('del', unpack(redis.call('keys', ARGV[1])))" 0 prefix:*

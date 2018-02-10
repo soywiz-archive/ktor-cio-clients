@@ -1,6 +1,7 @@
 buildscript {
     ext.kotlin_version = '1.2.21'
     ext.ktor_version = '0.9.1'
+    ext.kotlinx_coroutines = '0.22.1'
 
     repositories {
         mavenCentral()
@@ -40,10 +41,7 @@ allprojects {
 
     dependencies {
         compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
-        compile "io.ktor:ktor-server-netty:$ktor_version"
-
-        testCompile "ch.qos.logback:logback-classic:1.2.1"
-        testCompile "io.ktor:ktor-server-test-host:$ktor_version"
-        testCompile group: 'junit', name: 'junit', version: '4.12'
+        testCompile "junit:junit:4.12"
+        testCompile "org.jetbrains.kotlin:kotlin-test:$kotlin_version"
     }
 }

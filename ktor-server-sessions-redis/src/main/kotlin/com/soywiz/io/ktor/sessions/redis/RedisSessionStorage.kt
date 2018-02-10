@@ -2,18 +2,9 @@ package com.soywiz.io.ktor.sessions.redis
 
 import com.soywiz.io.ktor.client.redis.*
 import com.soywiz.io.ktor.client.util.*
-import io.ktor.application.call
-import io.ktor.application.install
-import io.ktor.response.respondText
-import io.ktor.routing.get
-import io.ktor.routing.routing
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
 import io.ktor.sessions.*
-import kotlinx.coroutines.experimental.io.ByteReadChannel
-import kotlinx.coroutines.experimental.io.ByteWriteChannel
-import kotlinx.coroutines.experimental.io.reader
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.experimental.io.*
+import java.io.*
 
 // @TODO: Ask: Could this be the default interface since Sessions are going to be small
 // @TODO: Ask: and most of the time (de)serialized in-memory
@@ -62,44 +53,6 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
         } else {
             redis.set(key, data.hex)
             redis.expire(key, ttlSeconds)
-        }
-    }
-}
-
-internal object RedisSessionStorageSpike {
-    data class TestSession(val visits: Int = 0)
-
-    @JvmStatic
-    fun main(args: Array<String>) {
-        val redis = Redis()
-
-        embeddedServer(Netty, 8080) {
-            install(Sessions) {
-                val cookieName = "SESSION4"
-                val sessionStorage = RedisSessionStorage(redis, ttlSeconds = 10)
-                cookie<TestSession>(cookieName, sessionStorage)
-                //header<TestUserSession>(cookieName, sessionStorage) {
-                //    transform(SessionTransportTransformerDigest())
-                //}
-            }
-            routing {
-                get("/") {
-                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
-                    call.sessions.set(TestSession(ses.visits + 1))
-                    call.respondText("hello: " + ses)
-                }
-                get("/set") {
-                    val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
-                    call.sessions.set(TestSession(ses.visits + 1))
-                    call.respondText("ok")
-                }
-                get("/get") {
-                    //call.respondText("ok: " + call.sessions.getOrNull<TestSession>())
-                    call.respondText("ok")
-                }
-            }
-        }.apply {
-            start(wait = true)
         }
     }
 }
