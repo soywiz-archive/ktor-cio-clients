@@ -1,0 +1,6 @@
+rootProject.name = 'ktor-client-cio'
+
+include ':ktor-client-cio-redis'
+include ':ktor-client-cio-cassandra'
+include ':ktor-client-cio-util'
+include ':ktor-server-sessions-redis'
