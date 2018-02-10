@@ -8,6 +8,7 @@ class MysqlTest {
         @JvmStatic
         fun main(args: Array<String>) {
             runBlocking {
+                //Mysql(user = "soywiz", password = "hello").use { mysql ->
                 Mysql().use { mysql ->
                     mysql.query("CREATE DATABASE IF NOT EXISTS mytest;")
                     mysql.useDatabase("mytest")

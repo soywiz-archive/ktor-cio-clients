@@ -4,6 +4,7 @@ import com.soywiz.io.ktor.client.util.*
 import java.io.*
 import java.math.*
 import java.nio.charset.*
+import java.security.*
 import java.text.*
 import java.util.*
 import kotlin.math.*
@@ -158,10 +159,8 @@ class MysqlClientLazy(
 ) : Mysql {
     private var client: Mysql? = null
 
-    private val initOnce = Once()
-
     private suspend fun initOnce(): Mysql {
-        initOnce {
+        if (client == null) {
             client = MysqlClient(host, port, user, password, database)
         }
         return client!!
@@ -267,7 +266,8 @@ class MysqlClient private constructor(
     class ServerInfo(
         val serverCapabilities: Int,
         val serverCapabilitiesMaria: Int,
-        val authPluginName: String?
+        val authPluginName: String?,
+        val scramble: ByteArray
     )
 
     /**
@@ -313,7 +313,7 @@ class MysqlClient private constructor(
             null
         }
 
-        ServerInfo(serverCapabilities, serverCapabilitiesMaria, authPluginName)
+        ServerInfo(serverCapabilities, serverCapabilitiesMaria, authPluginName, scramble1 + scramble2)
     }
 
     private suspend fun writeHandshake(
@@ -334,6 +334,8 @@ class MysqlClient private constructor(
         val extendedClientCapabilities = 0
         val authPluginName = serverInfo.authPluginName
 
+        val auth41 = true
+
         clientCapabilities = clientCapabilities or
                 CLIENT_LONG_PASSWORD or
                 CLIENT_SPEAKS_41 or
@@ -348,7 +350,39 @@ class MysqlClient private constructor(
         writeBytes(ByteArray(19)) // reserved
         write32_le(extendedClientCapabilities)
         writeStringz(user)
-        writeLenencBytes(byteArrayOf()) // password data!
+        if (password != "") {
+            if (auth41) {
+                // http://web.archive.org/web/20120701044449/http://forge.mysql.com/wiki/MySQL_Internals_ClientServer_Protocol#Password_functions
+                // Compute password to be sent
+                // 4.1 and later
+                // Remember that mysql.user.Password stores SHA1(SHA1(password))
+                //
+                // * The server sends a random string (scramble) to the client
+                // * the client calculates:
+                //   * stage1_hash = SHA1(password), using the password that the user has entered.
+                //   * token = SHA1(scramble + SHA1(stage1_hash)) XOR stage1_hash
+                // * the client sends the token to the server
+                // * the server calculates
+                //   * stage1_hash' = token XOR SHA1(scramble + mysql.user.Password)
+                // * the server compares SHA1(stage1_hash') and mysql.user.Password
+                // * If they are the same, the password is okay.
+                //
+                // (Note SHA1(A+B) is the SHA1 of the concatenation of A with B.)
+                //
+                // This protocol fixes the flaw of the old one, neither snooping on the wire nor mysql.user.Password are sufficient for a successful connection. But when one has both mysql.user.Password and the intercepted data on the wire, he has enough information to connect.
+
+                val stage1 = sha1(password.toByteArray(UTF8))
+                val stage2 = sha1(stage1)
+                val stage3 = sha1(serverInfo.scramble + stage2)
+                val hashedPassword = xor(stage3, stage1)
+
+                writeLenencBytes(hashedPassword) // password data!
+            } else {
+                TODO("Not handled PRE 4.1 authentication")
+            }
+        } else {
+            writeLenencBytes(byteArrayOf()) // password data!
+        }
         database?.let { writeStringz(it) }
         authPluginName?.let { writeStringz(it) }
         val attrs = listOf(
@@ -363,6 +397,11 @@ class MysqlClient private constructor(
             writeLenencString(key)
             writeLenencString(value)
         }
+    }
+
+    private fun sha1(data: ByteArray): ByteArray = MessageDigest.getInstance("SHA1").digest(data)
+    private fun xor(a: ByteArray, b: ByteArray): ByteArray = ByteArray(a.size).apply {
+        for (n in 0 until this.size) this[n] = (a[n].toInt() xor b[n].toInt()).toByte()
     }
 
     private suspend fun readResponse(): MysqlRows = readPacket {
