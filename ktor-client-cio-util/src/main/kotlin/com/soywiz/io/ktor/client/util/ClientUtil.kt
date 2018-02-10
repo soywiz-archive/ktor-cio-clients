@@ -1,18 +1,13 @@
 package com.soywiz.io.ktor.client.util
 
 import java.io.*
-import java.net.InetSocketAddress
-import java.nio.ByteBuffer
-import java.nio.channels.AsynchronousSocketChannel
-import java.nio.channels.CompletionHandler
+import java.net.*
+import java.nio.*
+import java.nio.channels.*
 import java.util.*
 import java.util.concurrent.*
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.experimental.Continuation
-import kotlin.coroutines.experimental.CoroutineContext
-import kotlin.coroutines.experimental.startCoroutine
-import kotlin.coroutines.experimental.suspendCoroutine
+import java.util.concurrent.atomic.*
+import kotlin.coroutines.experimental.*
 
 class Once {
     var completed = false
@@ -287,6 +282,7 @@ class AsyncQueue {
 class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend () -> T) {
     var createdItems = AtomicInteger()
     private val freedItem = LinkedList<T>()
+    private val waiters = LinkedList<Deferred<Unit>>()
 
     suspend fun <TR> tempAlloc(callback: suspend (T) -> TR): TR {
         val item = alloc()
@@ -298,16 +294,39 @@ class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend () -> 
     }
 
     suspend fun alloc(): T {
-        return if (createdItems.get() >= maxItems) {
-            freedItem.remove()!!
-        } else {
-            createdItems.addAndGet(1)
-            create()
+        while (true) {
+            // If we have an available item just retrieve it
+            synchronized(freedItem) {
+                if (freedItem.isNotEmpty()) {
+                    val item = freedItem.remove()
+                    if (item != null) {
+                        return item
+                    }
+                }
+            }
+
+            // If we don't have an available item yet and we can create more, just create one
+            if (createdItems.get() < maxItems) {
+                createdItems.addAndGet(1)
+                return create()
+            }
+            // If we shouldn't create more items and we don't have more, just await for one to be freed.
+            else {
+                val deferred = Deferred<Unit>()
+                synchronized(waiters) {
+                    waiters += deferred
+                }
+                deferred.await()
+            }
         }
     }
 
     fun free(item: T) {
-        freedItem.add(item)
+        synchronized(freedItem) {
+            freedItem.add(item)
+        }
+        val waiter = synchronized(waiters) { if (waiters.isNotEmpty()) waiters.remove() else null }
+        waiter?.resolve(Unit)
     }
 }
 
@@ -345,6 +364,7 @@ object Hex {
 
     fun encodeLower(src: ByteArray): String =
         encodeBase(src, DIGITS_LOWER)
+
     fun encodeUpper(src: ByteArray): String =
         encodeBase(src, DIGITS_UPPER)
 
