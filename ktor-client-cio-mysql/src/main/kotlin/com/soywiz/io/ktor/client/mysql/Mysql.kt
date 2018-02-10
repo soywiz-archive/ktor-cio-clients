@@ -327,14 +327,15 @@ class MysqlClient private constructor(
         val CLIENT_SPEAKS_41 = 0b1000000000
         val CLIENT_CONNECT_ATTRS = 1 shl 20
 
+        val SERVER_CAN_DO_AUTH_41 = 0b1_000_0000_0000_0000
+
         val serverCapabilities = serverInfo.serverCapabilities
         var clientCapabilities = 0
         val maxPacketSize = 1 shl 23
         val clientCollation = 33
         val extendedClientCapabilities = 0
         val authPluginName = serverInfo.authPluginName
-
-        val auth41 = true
+        val auth41 = (serverCapabilities and SERVER_CAN_DO_AUTH_41) != 0
 
         clientCapabilities = clientCapabilities or
                 CLIENT_LONG_PASSWORD or
@@ -352,30 +353,10 @@ class MysqlClient private constructor(
         writeStringz(user)
         if (password != "") {
             if (auth41) {
-                // http://web.archive.org/web/20120701044449/http://forge.mysql.com/wiki/MySQL_Internals_ClientServer_Protocol#Password_functions
-                // Compute password to be sent
-                // 4.1 and later
-                // Remember that mysql.user.Password stores SHA1(SHA1(password))
-                //
-                // * The server sends a random string (scramble) to the client
-                // * the client calculates:
-                //   * stage1_hash = SHA1(password), using the password that the user has entered.
-                //   * token = SHA1(scramble + SHA1(stage1_hash)) XOR stage1_hash
-                // * the client sends the token to the server
-                // * the server calculates
-                //   * stage1_hash' = token XOR SHA1(scramble + mysql.user.Password)
-                // * the server compares SHA1(stage1_hash') and mysql.user.Password
-                // * If they are the same, the password is okay.
-                //
-                // (Note SHA1(A+B) is the SHA1 of the concatenation of A with B.)
-                //
-                // This protocol fixes the flaw of the old one, neither snooping on the wire nor mysql.user.Password are sufficient for a successful connection. But when one has both mysql.user.Password and the intercepted data on the wire, he has enough information to connect.
-
                 val stage1 = sha1(password.toByteArray(UTF8))
                 val stage2 = sha1(stage1)
                 val stage3 = sha1(serverInfo.scramble + stage2)
                 val hashedPassword = xor(stage3, stage1)
-
                 writeLenencBytes(hashedPassword) // password data!
             } else {
                 TODO("Not handled PRE 4.1 authentication")
