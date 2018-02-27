@@ -1,8 +1,13 @@
 package com.soywiz.io.ktor.client.mysql
 
 import com.soywiz.io.ktor.client.util.*
+import io.ktor.network.sockets.*
+import io.ktor.network.sockets.Socket
+import kotlinx.coroutines.experimental.io.*
+import kotlinx.io.core.ByteOrder
 import java.io.*
 import java.math.*
+import java.net.*
 import java.nio.charset.*
 import java.security.*
 import java.text.*
@@ -170,22 +175,29 @@ class MysqlClientLazy(
     override suspend fun close(): Unit = initOnce().close()
 }
 
+suspend fun ByteReadChannel.readBytesExact(count: Int): ByteArray {
+    val out = ByteArray(count)
+    readFully(out)
+    return out
+}
+
 // Mysql protocol, compatible with MariaDB, Sphinx...
 // Reference: https://mariadb.com/kb/en/library/clientserver-protocol/
 // Reference: https://github.com/mysqljs/mysql/blob/master/lib/protocol/packets/HandshakeInitializationPacket.js
 // Used wireshark on loopback + mysql -u root -h 127.0.0.1 --ssl-mode=DISABLED for debugging
 class MysqlClient private constructor(
-    private val read: AsyncInputStream,
-    private val write: AsyncOutputStream,
-    private val close: AsyncCloseable
+    private val read: ByteReadChannel,
+    private val write: ByteWriteChannel,
+    private val close: Closeable
 ) : Mysql {
     private val charset = UTF8
 
     companion object {
         suspend operator fun invoke(
-            read: AsyncInputStream,
-            write: AsyncOutputStream,
-            close: AsyncCloseable,
+            read: ByteReadChannel,
+            write: ByteWriteChannel,
+            close: Closeable,
+
             user: String = "root",
             password: String = "",
             database: String? = null
@@ -196,12 +208,20 @@ class MysqlClient private constructor(
         }
 
         suspend operator fun invoke(
-            client: AsyncClient,
+            //client: AsyncClient,
+            client: Socket,
             user: String = "root",
             password: String = "",
             database: String? = null
         ): MysqlClient {
-            return invoke(client, client, client, user, password, database)
+            return invoke(
+                client.openReadChannel().apply { readByteOrder = ByteOrder.LITTLE_ENDIAN },
+                client.openWriteChannel(autoFlush = true).apply { writeByteOrder = ByteOrder.LITTLE_ENDIAN },
+                client,
+                user,
+                password,
+                database
+            )
         }
 
         suspend operator fun invoke(
@@ -211,7 +231,8 @@ class MysqlClient private constructor(
             password: String = "",
             database: String? = null
         ): MysqlClient {
-            return invoke(AsyncClient().connect(host, port), user, password, database)
+            //return invoke(AsyncClient().connect(host, port), user, password, database)
+            return invoke(aSocket().tcp().connect(InetSocketAddress(host, port)), user, password, database)
         }
 
         private val TIME_FORMAT = SimpleDateFormat("HH:mm:ss")
@@ -502,7 +523,7 @@ class MysqlClient private constructor(
         }
     }
 
-    suspend fun init(user: String, password: String, database: String?) {
+    suspend private fun init(user: String, password: String, database: String?) {
         val serverInfo = readHandshake()
         writeHandshake(serverInfo, user, password, database)
         readResponse()
