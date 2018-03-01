@@ -128,7 +128,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
 
         private suspend fun readValue(): Any? {
             val reader = reader()
-            val line = reader.readUntil(LF).toString(charset).trim()
+            val line = reader.readUntilString(LF, charset).trim()
             debug { "Redis[RECV]: $line" }
             //val line = reader.readLine(charset = charset).trim()
             //println(line)

@@ -1,62 +1,100 @@
 package com.soywiz.io.ktor.client.util
 
 import kotlinx.coroutines.experimental.io.*
+import kotlinx.coroutines.experimental.io.ByteBuffer
 import java.io.*
+import java.nio.*
+import java.nio.charset.*
 
 suspend fun ByteReadChannel.readBytesExact(count: Int, to: ByteArray = ByteArray(count)): ByteArray {
     return to.apply { readFully(to, 0, count) }
 }
 
-suspend fun ByteReadChannel.readUntil(delimitier: Byte, bufferSize: Int = 1024): ByteArray {
-    val out = ByteArrayOutputStream()
-    while (true) {
-        val b = readByte()
-        if (b == delimitier) {
-            break
-        }
-        out.write(b.toInt())
-    }
-    return out.toByteArray()
+// Simple version
+suspend fun ByteReadChannel.readUntilString(
+    delimiter: Byte,
+    charset: Charset,
+    bufferSize: Int = 1024,
+    expectedMinSize: Int = 16
+): String {
+    return readUntilString(
+        out = StringBuilder(expectedMinSize),
+        delimiter = ByteBuffer.wrap(byteArrayOf(delimiter)),
+        decoder = charset.newDecoder(),
+        charBuffer = CharBuffer.allocate(bufferSize),
+        buffer = ByteBuffer.allocate(bufferSize)
+    ).toString()
 }
 
-/*
-suspend fun ByteReadChannel.readUntil(delimitier: Byte, bufferSize: Int = 1024): ByteArray {
-    val out = ByteArrayOutputStream()
-    val delimiter = ByteBuffer.wrap(byteArrayOf(delimitier))
-    val bytes = ByteArray(bufferSize)
-    val buffer = ByteBuffer.wrap(bytes)
+// Allocation free version
+suspend fun ByteReadChannel.readUntilString(
+    out: StringBuilder,
+    delimiter: ByteBuffer,
+    decoder: CharsetDecoder,
+    charBuffer: CharBuffer = CharBuffer.allocate(1024),
+    buffer: ByteBuffer = ByteBuffer.allocate(1024)
+): StringBuilder {
+    out.setLength(0)
     do {
-        val read = readUntilDelimiter(delimiter, buffer)
-        if (read == 0) { // How do I differentiate empty/full buffer from reached the delimiter?
-            this.readByte()
+        buffer.clear()
+        readUntilDelimiter(delimiter, buffer)
+        buffer.flip()
+
+        if (!buffer.hasRemaining()) {
+            // EOF of delimiter encountered
+            //for (n in 0 until delimiter.remaining()) readByte()
+            skipDelimiter(delimiter)
+
+            charBuffer.clear()
+            decoder.decode(buffer, charBuffer, true)
+            charBuffer.flip()
+            out.append(charBuffer)
             break
         }
-        buffer.flip()
-        out.write(bytes, 0, buffer.limit())
+
+        // do something with a buffer
+        while (buffer.hasRemaining()) {
+            charBuffer.clear()
+            decoder.decode(buffer, charBuffer, false)
+            charBuffer.flip()
+            out.append(charBuffer)
+        }
+    } while (true)
+    return out
+}
+
+suspend fun ByteReadChannel.readUntil(delimiter: Byte, bufferSize: Int = 1024): ByteArray {
+    return readUntil(
+        out = ByteArrayOutputStream(),
+        delimiter = ByteBuffer.wrap(byteArrayOf(delimiter)),
+        bufferSize = bufferSize
+    ).toByteArray()
+}
+
+// Allocation free version
+suspend fun ByteReadChannel.readUntil(out: ByteArrayOutputStream, delimiter: ByteBuffer, bufferSize: Int = 1024): ByteArrayOutputStream {
+    out.reset()
+    val temp = ByteArray(bufferSize)
+    val buffer = ByteBuffer.allocate(bufferSize)
+    do {
         buffer.clear()
-    } while (read >= bufferSize)
-    return out.toByteArray()
-}
+        readUntilDelimiter(delimiter, buffer)
+        buffer.flip()
 
-suspend fun checkWithBufferSize(bufferSize: Int) {
-    val bc = ByteChannel(true)
-    bc.writeFully("HELLO\nWORLD\nAB\nA\n\n".toByteArray(Charsets.UTF_8))
-    println("-------")
-    for (n in 0 until 5) {
-        val ba = bc.readUntil('\n'.toByte(), bufferSize = bufferSize)
-        println("'" + ba.toString(Charsets.UTF_8) + "'")
-    }
-}
+        if (!buffer.hasRemaining()) {
+            skipDelimiter(delimiter)
 
-fun main(args: Array<String>): Unit {
-    runBlocking {
-        checkWithBufferSize(1)
-        checkWithBufferSize(2)
-        checkWithBufferSize(3)
-        checkWithBufferSize(4)
-        checkWithBufferSize(5)
-        checkWithBufferSize(6)
-        checkWithBufferSize(1024)
-    }
+            // EOF of delimiter encountered
+            break
+        }
+
+        var pos = 0
+        while (buffer.hasRemaining()) {
+            val rem = buffer.remaining()
+            buffer.get(temp, pos, rem)
+            pos += rem
+        }
+        out.write(temp, 0, pos)
+    } while (true)
+    return out
 }
-*/
