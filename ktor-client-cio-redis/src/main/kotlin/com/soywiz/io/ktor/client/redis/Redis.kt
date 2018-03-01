@@ -1,9 +1,12 @@
 package com.soywiz.io.ktor.client.redis
 
 import com.soywiz.io.ktor.client.util.*
+import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.delay
+import kotlinx.coroutines.experimental.io.*
 import kotlinx.coroutines.experimental.runBlocking
-import java.io.IOException
+import java.io.*
+import java.net.*
 import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicLong
 
@@ -16,30 +19,25 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
     companion object {
         //suspend operator fun invoke(
         operator fun invoke(
-            hosts: List<String> = listOf("127.0.0.1:6379"),
+            addresses: List<SocketAddress> = listOf(InetSocketAddress("127.0.0.1", 6379)),
             maxConnections: Int = 50,
             charset: Charset = Charsets.UTF_8,
             password: String? = null,
             stats: Stats = Stats(),
             bufferSize: Int = 0x1000
         ): Redis {
-            val hostsWithPorts = hosts.map { HostWithPort.parse(it, 6379) }
-
             var index: Int = 0
-
             return Redis(maxConnections, stats) {
-                val tcpClient = AsyncClient(bufferSize)
+                val tcpClientFactory = aSocket().tcp()
                 //Console.log("tcpClient: ${tcpClient::class}")
                 Client(
-                    reader = tcpClient,
                     reconnect = { client ->
-                        index = (index + 1) % hostsWithPorts.size
-                        val host = hostsWithPorts[index] // Round Robin
-                        tcpClient.connect(host.host, host.port)
+                        index = (index + 1) % addresses.size
+                        val host = addresses[index] // Round Robin
+                        val socket = tcpClientFactory.connect(host)
                         if (password != null) client.auth(password)
+                        Pipes(socket.openReadChannel(), socket.openWriteChannel(autoFlush = true), socket)
                     },
-                    writer = tcpClient,
-                    closeable = tcpClient,
                     charset = charset,
                     stats = stats
                 ).apply {
@@ -65,31 +63,71 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
         }
     }
 
+    data class Pipes(
+        val reader: ByteReadChannel,
+        val writer: ByteWriteChannel,
+        val closeable: Closeable
+    )
+
     class Client(
-        private val reader: AsyncInputStream,
-        private val writer: AsyncOutputStream,
-        private val closeable: AsyncCloseable,
         private val charset: Charset = Charsets.UTF_8,
         private val stats: Stats = Stats(),
-        private val reconnect: suspend (Client) -> Unit = {}
+        private val reconnect: suspend (Client) -> Pipes
     ) : RedisCommand {
-        suspend fun close() = this.closeable.close()
-
-        private val initOnce = Once()
+        lateinit var pipes: Pipes
+        private val initOnce = OnceAsync()
         private val commandQueue = AsyncQueue()
 
-        private suspend fun initOnce() {
-            initOnce {
-                commandQueue {
-                    try {
-                        reconnect(this@Client)
-                    } catch (e: IOException) {
+        companion object {
+            val MAX_RETRIES = 10
+        }
+
+        suspend fun reader(): ByteReadChannel = initOnce().reader
+        suspend fun writer(): ByteWriteChannel = initOnce().writer
+        suspend fun closeable(): Closeable = initOnce().closeable
+
+        suspend fun reconnect() {
+            try {
+                pipes = reconnect(this@Client)
+            } catch (e: Throwable) {
+                println("Failed to connect, retrying... ${e.message}")
+                throw e
+            }
+        }
+
+        suspend fun reconnectRetrying() {
+            var retryCount = 0
+            retry@ while (true) {
+                try {
+                    reconnect()
+                    return
+                } catch (e: IOException) {
+                    delay(500 * retryCount)
+                    retryCount++
+                    if (retryCount < MAX_RETRIES) {
+                        continue@retry
+                    } else {
+                        throw RuntimeException("Giving up trying to connect to redis max retries: $MAX_RETRIES")
                     }
                 }
             }
         }
 
+        private suspend fun initOnce(): Pipes {
+            initOnce {
+                commandQueue {
+                    reconnectRetrying()
+                }
+            }
+            return pipes
+        }
+
+        suspend fun close() {
+            closeable().close()
+        }
+
         private suspend fun readValue(): Any? {
+            val reader = reader()
             val line = reader.readUntil(LF).toString(charset).trim()
             debug { "Redis[RECV]: $line" }
             //val line = reader.readLine(charset = charset).trim()
@@ -106,7 +144,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                         null
                     } else {
                         val data = reader.readBytesExact(bytesToRead)
-                        reader.skip(2) // CR LF
+                        reader.readShort() // CR LF
                         data.toString(charset).apply {
                             debug { "Redis[RECV][data]: $this" }
                         }
@@ -120,14 +158,12 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
             }
         }
 
-        val maxRetries = 10
-
         private inline fun debug(msg: () -> String) {
             if (DEBUG) println(msg())
         }
 
         override suspend fun commandAny(vararg args: Any?): Any? {
-            initOnce()
+            val writer = writer()
             //println(args.toList())
             stats.commandsQueued.incrementAndGet()
             return commandQueue {
@@ -175,15 +211,15 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                         t.printStackTrace()
                         stats.commandsErrored.incrementAndGet()
                         try {
-                            reconnect(this@Client)
+                            reconnect()
                         } catch (e: Throwable) {
                         }
                         delay(500 * retryCount)
                         retryCount++
-                        if (retryCount < maxRetries) {
+                        if (retryCount < MAX_RETRIES) {
                             continue@retry
                         } else {
-                            throw RuntimeException("Giving up with this redis request max retries $maxRetries")
+                            throw RuntimeException("Giving up with this redis request max retries $MAX_RETRIES")
                         }
                     } catch (t: Throwable) {
                         stats.commandsErrored.incrementAndGet()

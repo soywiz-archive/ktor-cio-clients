@@ -1,11 +1,14 @@
 package com.soywiz.io.ktor.client.util
 
+import kotlinx.coroutines.experimental.*
 import java.io.*
 import java.net.*
 import java.nio.*
 import java.nio.channels.*
+import java.nio.channels.CompletionHandler
 import java.util.*
 import java.util.concurrent.*
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.*
 import kotlin.coroutines.experimental.*
 
@@ -17,6 +20,17 @@ class Once {
             completed = true
             callback()
         }
+    }
+}
+
+class OnceAsync {
+    var deferred: kotlinx.coroutines.experimental.Deferred<Unit>? = null
+
+    suspend operator fun invoke(callback: suspend () -> Unit) {
+        if (deferred == null) {
+            deferred = async { callback() }
+        }
+        return deferred!!.await()
     }
 }
 
