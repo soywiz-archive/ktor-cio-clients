@@ -22,12 +22,13 @@ class RedisIntegrationTest {
 
     @Test
     fun getSet(): Unit = redisTest {
-        val myvalue = "myvalue"
-        redis.del(key1)
-        assertEquals(null, redis.get(key1))
-        redis.set(key1, myvalue)
-        assertEquals(myvalue, redis.get(key1))
-        redis.del(key1)
+        for (myvalue in listOf("", "a", "ab", "abc", "myalue", "a".repeat(1024), "a".repeat(2048))) {
+            redis.del(key1)
+            assertEquals(null, redis.get(key1))
+            redis.set(key1, myvalue)
+            assertEquals(myvalue, redis.get(key1))
+            redis.del(key1)
+        }
     }
 
     @Test
