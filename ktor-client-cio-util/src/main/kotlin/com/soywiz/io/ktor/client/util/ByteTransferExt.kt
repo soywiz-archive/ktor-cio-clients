@@ -31,10 +31,10 @@ suspend fun ByteReadChannel.readUntilString(
     out: StringBuilder,
     delimiter: ByteBuffer,
     decoder: CharsetDecoder,
-    charBuffer: CharBuffer = CharBuffer.allocate(1024),
-    buffer: ByteBuffer = ByteBuffer.allocate(1024)
+    charBuffer: CharBuffer,
+    buffer: ByteBuffer
 ): StringBuilder {
-    out.setLength(0)
+    decoder.reset()
     do {
         buffer.clear()
         readUntilDelimiter(delimiter, buffer)

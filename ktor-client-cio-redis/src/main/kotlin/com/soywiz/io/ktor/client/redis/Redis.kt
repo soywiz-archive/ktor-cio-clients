@@ -4,18 +4,24 @@ import com.soywiz.io.ktor.client.util.*
 import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.io.*
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.experimental.io.ByteBuffer
 import java.io.*
+import java.lang.StringBuilder
 import java.net.*
-import java.nio.charset.Charset
+import java.nio.*
+import java.nio.charset.*
 import java.util.concurrent.atomic.AtomicLong
 
 //private const val DEBUG = true
 private const val DEBUG = false
 
 // https://redis.io/topics/protocol
-class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private val clientFactory: suspend () -> Client) :
-    RedisCommand {
+class Redis(
+    val maxConnections: Int = 50,
+    val stats: Stats = Stats(),
+    val charset: Charset = Charsets.UTF_8,
+    private val clientFactory: suspend () -> Client
+) : RedisCommand {
     companion object {
         //suspend operator fun invoke(
         operator fun invoke(
@@ -27,7 +33,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
             bufferSize: Int = 0x1000
         ): Redis {
             var index: Int = 0
-            return Redis(maxConnections, stats) {
+            return Redis(maxConnections, stats, charset) {
                 val tcpClientFactory = aSocket().tcp()
                 //Console.log("tcpClient: ${tcpClient::class}")
                 Client(
@@ -48,6 +54,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
 
         //private const val CR = '\r'.toByte()
         private const val LF = '\n'.toByte()
+        private val LF_BB = ByteBuffer.wrap(byteArrayOf(LF))
     }
 
     class Stats {
@@ -56,6 +63,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
         val commandsPreWritten = AtomicLong()
         val commandsWritten = AtomicLong()
         val commandsErrored = AtomicLong()
+        val commandsFailed = AtomicLong()
         val commandsFinished = AtomicLong()
 
         override fun toString(): String {
@@ -74,6 +82,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
         private val stats: Stats = Stats(),
         private val reconnect: suspend (Client) -> Pipes
     ) : RedisCommand {
+        val charsetDecoder = charset.newDecoder()
         lateinit var pipes: Pipes
         private val initOnce = OnceAsync()
         private val commandQueue = AsyncQueue()
@@ -126,9 +135,17 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
             closeable().close()
         }
 
+        private val valueSB = StringBuilder(1024)
+        private val valueCB = CharBuffer.allocate(1024)
+        private val valueBB = ByteBuffer.allocate((1024 / charsetDecoder.maxCharsPerByte()).toInt())
         private suspend fun readValue(): Any? {
             val reader = reader()
-            val line = reader.readUntilString(LF, charset).trim()
+
+            valueSB.setLength(0)
+            val line = reader.readUntilString(
+                valueSB, LF_BB, charsetDecoder, valueCB, valueBB
+            ).trimEnd().toString()
+
             debug { "Redis[RECV]: $line" }
             //val line = reader.readLine(charset = charset).trim()
             //println(line)
@@ -151,7 +168,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                     }
                 }
                 '*' -> { // Array reply
-                    val arraySize = line.substring(1).toLong()
+                    val arraySize = line.substring(1).toInt()
                     (0 until arraySize).map { readValue() }
                 }
                 else -> throw ResponseException("Unknown param type '${line[0]}'")
@@ -162,33 +179,41 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
             if (DEBUG) println(msg())
         }
 
+        private val cmdChunk = BOS(1024, charset)
+        private val cmd = BOS(1024, charset)
         override suspend fun commandAny(vararg args: Any?): Any? {
             val writer = writer()
             //println(args.toList())
             stats.commandsQueued.incrementAndGet()
             return commandQueue {
-                val cmd = StringBuilder()
+                cmd.reset()
                 cmd.append('*')
                 cmd.append(args.size)
-                cmd.append("\r\n")
+                cmd.append('\r')
+                cmd.append('\n')
                 for (arg in args) {
-                    //val sarg = "$arg".redisQuoteIfRequired()
-                    val sarg = "$arg"
+                    cmdChunk.reset()
+                    when (arg) {
+                        is Int -> cmdChunk.append(arg)
+                        is Long -> cmdChunk.append(arg)
+                        else -> cmdChunk.append(arg.toString())
+                    }
                     // Length of the argument.
-                    val size = sarg.toByteArray(charset).size
                     cmd.append('$')
-                    cmd.append(size)
-                    cmd.append("\r\n")
-                    cmd.append(sarg)
-                    cmd.append("\r\n")
+                    cmd.append(cmdChunk.size())
+                    cmd.append('\r')
+                    cmd.append('\n')
+                    cmd.append(cmdChunk)
+                    cmd.append('\r')
+                    cmd.append('\n')
                 }
 
                 // Common queue is not required align reading because Redis support pipelining : https://redis.io/topics/pipelining
-                val dataString = cmd.toString()
-                val data = dataString.toByteArray(charset)
+                val data = cmd.buf()
+                val dataLen = cmd.size()
                 var retryCount = 0
 
-                debug { "Redis[SEND]: $dataString" }
+                debug { "Redis[SEND]: $cmd" }
 
                 retry@ while (true) {
                     stats.commandsStarted.incrementAndGet()
@@ -198,7 +223,7 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                         //Console.log("writer: ${writer::class}")
                         //Console.log(writer)
                         //println("[a]")
-                        writer.writeFully(data) // @TODO: Maybe use writeAvailable instead of appending?
+                        writer.writeFully(data, 0, dataLen) // @TODO: Maybe use writeAvailable instead of appending?
                         writer.flush()
                         //println("[b]")
                         stats.commandsWritten.incrementAndGet()
@@ -221,9 +246,9 @@ class Redis(val maxConnections: Int = 50, val stats: Stats = Stats(), private va
                         } else {
                             throw RuntimeException("Giving up with this redis request max retries $MAX_RETRIES")
                         }
-                    } catch (t: Throwable) {
-                        stats.commandsErrored.incrementAndGet()
-                        println(t)
+                    } catch (t: ResponseException) {
+                        stats.commandsFailed.incrementAndGet()
+                        //println(t)
                         throw t
                     }
                 }
@@ -250,36 +275,105 @@ suspend fun RedisCommand.commandString(vararg args: Any?): String? = commandAny(
 suspend fun RedisCommand.commandLong(vararg args: Any?): Long = commandAny(*args)?.toString()?.toLongOrNull() ?: 0L
 suspend fun RedisCommand.commandUnit(vararg args: Any?): Unit = run { commandAny(*args) }
 
-internal object RedisExperiment {
-    @JvmStatic
-    fun main(args: Array<String>): Unit {
-        runBlocking {
-            val redis = Redis(bufferSize = 1)
-            //val redis = Redis(bufferSize = 3)
-            redis.set("a", "hello")
-            println(redis.get("a"))
+/**
+ * Optimized class for allocation free String/ByteArray building
+ */
+private class BOS(size: Int, val charset: Charset) : ByteArrayOutputStream(size) {
+    private val charsetEncoder = charset.newEncoder()
+    private val tempCB = CharBuffer.allocate(1024)
+    private val tempBB = ByteBuffer.allocate((tempCB.count() * charsetEncoder.maxBytesPerChar()).toInt())
+    private val tempSB = StringBuilder(64)
+
+    fun buf(): ByteArray {
+        return buf
+    }
+
+    fun append(value: Long) {
+        tempSB.setLength(0)
+        tempSB.append(value)
+        tempCB.clear()
+        tempSB.getChars(0, tempSB.length, tempCB.array(), 0)
+        //println(tempCB.toString())
+        tempCB.position(tempSB.length)
+        tempCB.flip()
+        //println(tempCB.remaining())
+        append(tempCB)
+    }
+
+    fun append(value: Int) {
+        when (value) {
+            in 0..9 -> {
+                write(('0' + value).toInt())
+            }
+            in 10..99 -> {
+                write(('0' + (value / 10)).toInt())
+                write(('0' + (value % 10)).toInt())
+            }
+            else -> {
+                //append("$value")
+                tempSB.setLength(0)
+                tempSB.append(value)
+                tempCB.clear()
+                tempSB.getChars(0, tempSB.length, tempCB.array(), 0)
+                //println(tempCB.toString())
+                tempCB.position(tempSB.length)
+                tempCB.flip()
+                //println(tempCB.remaining())
+                append(tempCB)
+            }
         }
     }
-}
 
-// @TODO: SLOWER:
-//val cmd = ByteArrayOutputStream()
-//val ps = PrintStream(cmd, true, Charsets.UTF_8.name())
-//
-//ps.print('*')
-//ps.print(args.size)
-//ps.print("\r\n")
-//for (arg in args) {
-//	val data = "$arg".toByteArray(charset)
-//	ps.print('$')
-//	ps.print(data.size)
-//	ps.print("\r\n")
-//	ps.write(data)
-//	ps.print("\r\n")
-//}
-//
-//// Common queue is not required align reading because Redis support pipelining : https://redis.io/topics/pipelining
-//return commandQueue {
-//	writer.writeBytes(cmd.toByteArray())
-//	readValue()
-//}
+    fun append(char: Char) {
+        if (char.toInt() <= 0xFF) {
+            write(char.toInt())
+        } else {
+            tempCB.clear()
+            tempCB.put(char)
+            tempCB.flip()
+            append(tempCB)
+        }
+    }
+
+    fun append(str: String) {
+        val len = str.length
+        if (len == 0) return
+
+        val chunk = Math.min(len, 1024)
+
+        for (n in 0 until len step chunk) {
+            tempCB.clear()
+            val cend = Math.min(len, n + chunk)
+            str.toCharArray(tempCB.array(), 0, n, cend)
+            tempCB.position(cend - n)
+            tempCB.flip()
+            append(tempCB)
+        }
+    }
+
+    fun append(bb: ByteBuffer) {
+        while (bb.hasRemaining()) {
+            write(bb.get().toInt())
+        }
+    }
+
+    fun append(cb: CharBuffer) {
+        charsetEncoder.reset()
+        while (cb.hasRemaining()) {
+            tempBB.clear()
+            charsetEncoder.encode(cb, tempBB, false)
+            tempBB.flip()
+            append(tempBB)
+        }
+        tempBB.clear()
+        charsetEncoder.encode(cb, tempBB, true)
+        tempBB.flip()
+        append(tempBB)
+    }
+
+    fun append(that: BOS) {
+        this.write(that.buf(), 0, that.size())
+    }
+
+    override fun toString() = toByteArray().toString(charset)
+}
