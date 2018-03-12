@@ -10,6 +10,7 @@ import java.net.*
 // https://www.postgresql.org/docs/9.3/static/protocol.html
 // https://www.postgresql.org/docs/9.3/static/protocol-message-formats.html
 // https://www.postgresql.org/docs/9.3/static/protocol-flow.html
+// https://www.postgresql.org/docs/9.2/static/datatype-oid.html
 
 interface PostgreClient {
     suspend fun query(str: String): PostgreRowSet
@@ -174,9 +175,10 @@ class PostgreRow(val columns: PostgreColumns, val cellsBytes: List<ByteArray>) {
     override fun toString(): String = "PostgreRow($pairs)"
 }
 
-class PostgreRowSet(val columns: PostgreColumns, val rows: SuspendingSequence<PostgreRow>) : SuspendingSequence<PostgreRow> by rows {
-
-}
+class PostgreRowSet(
+    val columns: PostgreColumns,
+    val rows: SuspendingSequence<PostgreRow>
+) : SuspendingSequence<PostgreRow> by rows
 
 suspend fun PostgreClient(
     read: ByteReadChannel,
