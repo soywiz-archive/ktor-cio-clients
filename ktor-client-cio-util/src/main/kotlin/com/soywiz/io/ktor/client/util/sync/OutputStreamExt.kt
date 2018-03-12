@@ -3,6 +3,10 @@ package com.soywiz.io.ktor.client.util.sync
 import java.io.*
 import java.nio.charset.*
 
+inline fun buildByteArray(callback: ByteArrayOutputStream.() -> Unit): ByteArray {
+    return MemorySyncStreamToByteArray(callback)
+}
+
 inline fun MemorySyncStreamToByteArray(callback: ByteArrayOutputStream.() -> Unit): ByteArray {
     val bos = ByteArrayOutputStream()
     callback(bos)
