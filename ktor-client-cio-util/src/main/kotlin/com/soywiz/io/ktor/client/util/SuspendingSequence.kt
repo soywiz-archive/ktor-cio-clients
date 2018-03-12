@@ -16,3 +16,13 @@ suspend fun <T> SuspendingIterator<T>.toList(): List<T> {
     while (this.hasNext()) out += this.next()
     return out
 }
+
+fun <T> List<T>.toSuspendingSequence() = object : SuspendingSequence<T> {
+    override fun iterator(): SuspendingIterator<T> {
+        val lit = this@toSuspendingSequence.iterator()
+        return object : SuspendingIterator<T> {
+            override suspend fun hasNext(): Boolean = lit.hasNext()
+            override suspend fun next(): T = lit.next()
+        }
+    }
+}

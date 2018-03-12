@@ -93,15 +93,7 @@ data class MysqlRow(val columns: MysqlColumns, val data: List<Any?>) : List<Any?
 typealias MysqlRows = SuspendingSequence<MysqlRow>
 
 fun MysqlRows(columns: MysqlColumns, list: List<MysqlRow>): MysqlRows {
-    return object : SuspendingSequence<MysqlRow> {
-        override fun iterator(): SuspendingIterator<MysqlRow> {
-            val lit = list.iterator()
-            return object : SuspendingIterator<MysqlRow> {
-                override suspend fun hasNext(): Boolean = lit.hasNext()
-                override suspend fun next(): MysqlRow = lit.next()
-            }
-        }
-    }
+    return list.toSuspendingSequence()
 }
 
 class MysqlException(val errorCode: Int, val sqlState: String, message: String) : Exception(message) {

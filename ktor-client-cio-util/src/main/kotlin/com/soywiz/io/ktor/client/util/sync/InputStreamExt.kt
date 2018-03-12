@@ -3,6 +3,7 @@ package com.soywiz.io.ktor.client.util.sync
 import java.io.*
 import java.nio.charset.*
 
+inline fun <T> ByteArray.read(callback: ByteArrayInputStream .() -> T): T = callback(openSync())
 
 fun ByteArray.openSync(): ByteArrayInputStream = ByteArrayInputStream(this)
 
