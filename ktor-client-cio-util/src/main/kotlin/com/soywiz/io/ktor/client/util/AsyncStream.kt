@@ -6,7 +6,6 @@ import java.nio.*
 import java.nio.channels.*
 import kotlin.coroutines.experimental.*
 
-
 interface AsyncInputStream {
     //suspend fun readBytesUpTo(count: Int): ByteArray
     suspend fun read(): Int

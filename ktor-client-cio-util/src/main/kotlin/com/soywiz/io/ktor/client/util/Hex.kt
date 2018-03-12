@@ -7,23 +7,29 @@ object Hex {
 
     fun isHexDigit(c: Char) = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
 
+    fun decodeHexDigit(c: Char): Int {
+        return when (c) {
+            in '0'..'9' -> (c - '0') + 0
+            in 'a'..'f' -> (c - 'a') + 10
+            in 'A'..'F' -> (c - 'A') + 10
+            else -> throw IllegalArgumentException("Not an hex digit")
+        }
+    }
+
     fun decode(str: String): ByteArray {
         val out = ByteArray(str.length / 2)
+        var m = 0
         for (n in 0 until out.size) {
-            val n2 = n * 2
-            out[n] = (str.substring(n2, n2 + 2).toIntOrNull(16) ?: 0).toByte()
+            val high = str[m++]
+            val low = str[m++]
+            out[n] = ((decodeHexDigit(high) shl 4) or (decodeHexDigit(low) shl 0)).toByte()
         }
         return out
     }
 
-    fun encode(src: ByteArray): String =
-        encodeBase(src, DIGITS_LOWER)
-
-    fun encodeLower(src: ByteArray): String =
-        encodeBase(src, DIGITS_LOWER)
-
-    fun encodeUpper(src: ByteArray): String =
-        encodeBase(src, DIGITS_UPPER)
+    fun encode(src: ByteArray): String = encodeBase(src, DIGITS_LOWER)
+    fun encodeLower(src: ByteArray): String = encodeBase(src, DIGITS_LOWER)
+    fun encodeUpper(src: ByteArray): String = encodeBase(src, DIGITS_UPPER)
 
     private fun encodeBase(data: ByteArray, digits: String = DIGITS): String {
         val out = StringBuilder(data.size * 2)

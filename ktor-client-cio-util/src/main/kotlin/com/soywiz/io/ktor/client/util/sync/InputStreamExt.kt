@@ -4,9 +4,7 @@ import java.io.*
 import java.nio.charset.*
 
 
-fun ByteArray.openSync(): ByteArrayInputStream {
-    return ByteArrayInputStream(this)
-}
+fun ByteArray.openSync(): ByteArrayInputStream = ByteArrayInputStream(this)
 
 fun InputStream.readS8(): Int = readU8().toByte().toInt()
 
