@@ -3,16 +3,20 @@ package com.soywiz.io.ktor.client.cassandra
 import com.soywiz.io.ktor.client.util.*
 import com.soywiz.io.ktor.client.util.Deferred
 import com.soywiz.io.ktor.client.util.sync.*
+import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.experimental.io.*
 import org.intellij.lang.annotations.*
 import java.io.*
-import java.nio.*
+import java.net.*
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 // https://raw.githubusercontent.com/apache/cassandra/trunk/doc/native_protocol_v3.spec
 class Cassandra private constructor(
-    private val reader: AsyncInputStream,
-    private val writer: AsyncOutputStream,
-    private val close: AsyncCloseable,
+    private val reader: ByteReadChannel,
+    private val writer: ByteWriteChannel,
+    private val close: Closeable,
     private val bufferSize: Int = 0x1000,
     private val debug: Boolean = false
 ) {
@@ -232,7 +236,7 @@ class Cassandra private constructor(
         val payload: Bytes
     ) {
         companion object {
-            suspend fun read(reader: AsyncInputStream): Packet {
+            suspend fun read(reader: ByteReadChannel): Packet {
                 val info = reader.readBytesExact(9).openSync()
                 val version = info.readU8()
                 val flags = info.readU8()
@@ -257,17 +261,23 @@ class Cassandra private constructor(
     companion object {
         suspend operator fun invoke(host: String = "127.0.0.1", port: Int = 9042, debug: Boolean = false): Cassandra {
             val bufferSize = 0x1000
-            val client = AsyncClient(bufferSize).apply { connect(host, port) }
-            return invoke(reader = client, writer = client, close = client, bufferSize = bufferSize, debug = debug)
+            val client = aSocket().tcp().connect(InetSocketAddress(host, port))
+            return invoke(
+                reader = client.openReadChannel(),
+                writer = client.openWriteChannel(autoFlush = true),
+                close = client,
+                bufferSize = bufferSize,
+                debug = debug
+            )
         }
 
         /**
          * Constructor used for unittesting
          */
         suspend operator fun invoke(
-            reader: AsyncInputStream,
-            writer: AsyncOutputStream,
-            close: AsyncCloseable,
+            reader: ByteReadChannel,
+            writer: ByteWriteChannel,
+            close: Closeable,
             bufferSize: Int = 0x1000,
             debug: Boolean = false
         ): Cassandra {

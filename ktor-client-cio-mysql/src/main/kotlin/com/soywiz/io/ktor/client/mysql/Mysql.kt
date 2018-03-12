@@ -397,8 +397,8 @@ class MysqlClient private constructor(
             "program_name" to "ktor"
         )
         for ((key, value) in attrs) {
-            writeLenencString(key, charset)
-            writeLenencString(value, charset)
+            writeLenencString(key)
+            writeLenencString(value)
         }
     }
 
@@ -572,10 +572,10 @@ class MysqlClient private constructor(
 
     fun InputStream.readLenencBytes() = readBytesExact(readLenencSmall())
 
-    fun InputStream.readLenencString(charset: Charset): String =
+    fun InputStream.readLenencString(charset: Charset = UTF8): String =
         readLenencBytes().toString(charset)
 
-    fun InputStream.readEofString(charset: Charset): String = readBytesAvailable().toString(charset)
+    fun InputStream.readEofString(charset: Charset = UTF8): String = readBytesAvailable().toString(charset)
 
     fun OutputStream.writeLenencString(str: String, charset: Charset) =
         writeLenencBytes(str.toByteArray(charset))

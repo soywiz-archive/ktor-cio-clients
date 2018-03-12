@@ -1,3 +1,5 @@
 dependencies {
     compile project(":ktor-client-cio-util")
+
+    compile "io.ktor:ktor-network:$ktor_version"
 }
