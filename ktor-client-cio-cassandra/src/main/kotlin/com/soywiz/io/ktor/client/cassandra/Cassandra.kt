@@ -2,11 +2,11 @@ package com.soywiz.io.ktor.client.cassandra
 
 import com.soywiz.io.ktor.client.util.*
 import com.soywiz.io.ktor.client.util.Deferred
+import com.soywiz.io.ktor.client.util.sync.*
 import kotlinx.coroutines.experimental.*
 import org.intellij.lang.annotations.*
 import java.io.*
 import java.nio.*
-import java.nio.charset.*
 
 // https://raw.githubusercontent.com/apache/cassandra/trunk/doc/native_protocol_v3.spec
 class Cassandra private constructor(

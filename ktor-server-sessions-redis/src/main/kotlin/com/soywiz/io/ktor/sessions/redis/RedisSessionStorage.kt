@@ -5,6 +5,7 @@ import com.soywiz.io.ktor.client.util.*
 import io.ktor.sessions.*
 import kotlinx.coroutines.experimental.io.*
 import java.io.*
+import kotlin.coroutines.experimental.*
 
 // @TODO: Ask: Could this be the default interface since Sessions are going to be small
 // @TODO: Ask: and most of the time (de)serialized in-memory
@@ -22,7 +23,7 @@ abstract class SimplifiedSessionStorage : SessionStorage {
     }
 
     override suspend fun write(id: String, provider: suspend (ByteWriteChannel) -> Unit) {
-        return provider(reader(getCoroutineContext(), autoFlush = true) {
+        return provider(reader(coroutineContext, autoFlush = true) {
             val data = ByteArrayOutputStream()
             val temp = ByteArray(1024)
             while (!channel.isClosedForRead) {
@@ -41,7 +42,7 @@ class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val
 
     override suspend fun read(id: String): ByteArray? {
         val key = buildKey(id)
-        return redis.get(key)?.hex?.apply {
+        return redis.get(key)?.unhex?.apply {
             redis.expire(key, ttlSeconds) // refresh
         }
     }

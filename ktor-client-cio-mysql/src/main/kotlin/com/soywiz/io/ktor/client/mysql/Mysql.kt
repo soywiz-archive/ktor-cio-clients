@@ -1,6 +1,7 @@
 package com.soywiz.io.ktor.client.mysql
 
 import com.soywiz.io.ktor.client.util.*
+import com.soywiz.io.ktor.client.util.sync.*
 import io.ktor.network.sockets.*
 import io.ktor.network.sockets.Socket
 import kotlinx.coroutines.experimental.io.*
@@ -190,7 +191,7 @@ class MysqlClient private constructor(
     private val write: ByteWriteChannel,
     private val close: Closeable
 ) : Mysql {
-    private val charset = UTF8
+    private val charset = Charsets.UTF_8
 
     companion object {
         suspend operator fun invoke(
@@ -300,7 +301,7 @@ class MysqlClient private constructor(
         val PLUGIN_AUTH = 0x00080000
 
         val protocolVersion = readU8()
-        val serverVersion = readStringz(UTF8)
+        val serverVersion = readStringz(charset)
         val connectionID = readS32_le()
         val scramble1 = readBytesExact(8)
         val reserved1 = readU8()
@@ -329,7 +330,7 @@ class MysqlClient private constructor(
             byteArrayOf()
         }
         val authPluginName = if ((serverCapabilities and PLUGIN_AUTH) != 0) {
-            readStringz(UTF8)
+            readStringz(charset)
         } else {
             null
         }
@@ -374,7 +375,7 @@ class MysqlClient private constructor(
         writeStringz(user)
         if (password != "") {
             if (auth41) {
-                val stage1 = sha1(password.toByteArray(UTF8))
+                val stage1 = sha1(password.toByteArray(charset))
                 val stage2 = sha1(stage1)
                 val stage3 = sha1(serverInfo.scramble + stage2)
                 val hashedPassword = xor(stage3, stage1)
@@ -396,8 +397,8 @@ class MysqlClient private constructor(
             "program_name" to "ktor"
         )
         for ((key, value) in attrs) {
-            writeLenencString(key)
-            writeLenencString(value)
+            writeLenencString(key, charset)
+            writeLenencString(value, charset)
         }
     }
 
@@ -571,12 +572,12 @@ class MysqlClient private constructor(
 
     fun InputStream.readLenencBytes() = readBytesExact(readLenencSmall())
 
-    fun InputStream.readLenencString(charset: Charset = UTF8): String =
+    fun InputStream.readLenencString(charset: Charset): String =
         readLenencBytes().toString(charset)
 
-    fun InputStream.readEofString(charset: Charset = UTF8): String = readBytesAvailable().toString(charset)
+    fun InputStream.readEofString(charset: Charset): String = readBytesAvailable().toString(charset)
 
-    fun OutputStream.writeLenencString(str: String, charset: Charset = UTF8) =
+    fun OutputStream.writeLenencString(str: String, charset: Charset) =
         writeLenencBytes(str.toByteArray(charset))
 
     fun OutputStream.writeLenencBytes(data: ByteArray) {
