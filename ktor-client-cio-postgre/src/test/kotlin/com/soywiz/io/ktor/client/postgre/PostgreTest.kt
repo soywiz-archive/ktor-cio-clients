@@ -3,7 +3,6 @@ package com.soywiz.io.ktor.client.postgre
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import org.junit.*
-import sun.applet.*
 
 class PostgreTest {
     @Test

@@ -47,13 +47,14 @@ private class InternalPostgreClient(
                     columns = PostgreColumns(packet.read {
                         (0 until readU16_be()).map {
                             PostgreColumn(
+                                index = it,
                                 name = readStringz(),
                                 tableOID = readS32_be(),
                                 columnIndex = readU16_be(),
                                 typeOID = readS32_be(),
                                 typeSize = readS16_be(),
                                 typeMod = readS32_be(),
-                                format = readU16_be()
+                                text = readU16_be() == 0
                             )
                         }
                     })
@@ -161,17 +162,33 @@ private class InternalPostgreClient(
     }
 }
 
-data class PostgreColumns(val columns: List<PostgreColumn>)
+data class PostgreColumns(val columns: List<PostgreColumn>) {
+    val columnsByName = columns.associateBy { it.name }
+    operator fun get(name: String) = columnsByName[name]
+    operator fun get(index: Int) = columns.getOrNull(index)
+}
 
 data class PostgreColumn(
+    val index: Int,
     val name: String, val tableOID: Int, val columnIndex: Int, val typeOID: Int,
     val typeSize: Int,
     val typeMod: Int,
-    val format: Int
+    val text: Boolean
 )
 
-class PostgreRow(val columns: PostgreColumns, val cellsBytes: List<ByteArray>) {
-    val pairs get() = columns.columns.map { it.name }.zip(cellsBytes)
+class PostgreRow(val columns: PostgreColumns, val cells: List<ByteArray>) : List<ByteArray> by cells {
+    fun bytes(key: Int) = cells.getOrNull(key)
+    fun bytes(key: String) = columns[key]?.let { bytes(it.index) }
+
+    fun string(key: Int) = bytes(key)?.toString(Charsets.UTF_8)
+    fun string(key: String) = bytes(key)?.toString(Charsets.UTF_8)
+
+    fun int(key: Int) = string(key)?.toInt()
+    fun int(key: String) = string(key)?.toInt()
+
+    operator fun get(key: String) = bytes(key)
+
+    val pairs get() = columns.columns.map { it.name }.zip(cells)
     override fun toString(): String = "PostgreRow($pairs)"
 }
 
