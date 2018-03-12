@@ -41,14 +41,15 @@ private class InternalPostgreClient(
         read@ while (true) {
             val packet = read.readPostgrePacket()
             when (packet.typeChar) {
-                'T' -> { // RowDescription
+                'T' -> { // RowDescription (B)
+                    // https://www.postgresql.org/docs/9.2/static/catalog-pg-type.html
                     columns = PostgreColumns(packet.read {
                         (0 until readU16_be()).map {
                             PostgreColumn(
                                 name = readStringz(),
-                                tableId = readS32_be(),
-                                columnId = readU16_be(),
-                                objectId = readS32_be(),
+                                tableOID = readS32_be(),
+                                columnIndex = readU16_be(),
+                                typeOID = readS32_be(),
                                 typeSize = readS16_be(),
                                 typeMod = readS32_be(),
                                 format = readU16_be()
@@ -56,7 +57,7 @@ private class InternalPostgreClient(
                         }
                     })
                 }
-                'D' -> { // DataRow
+                'D' -> { // DataRow (B)
                     rows += PostgreRow(columns,packet.read {
                         (0 until readU16_be()).map {
                             readBytesExact(readS32_be())
@@ -162,7 +163,7 @@ private class InternalPostgreClient(
 data class PostgreColumns(val columns: List<PostgreColumn>)
 
 data class PostgreColumn(
-    val name: String, val tableId: Int, val columnId: Int, val objectId: Int,
+    val name: String, val tableOID: Int, val columnIndex: Int, val typeOID: Int,
     val typeSize: Int,
     val typeMod: Int,
     val format: Int
