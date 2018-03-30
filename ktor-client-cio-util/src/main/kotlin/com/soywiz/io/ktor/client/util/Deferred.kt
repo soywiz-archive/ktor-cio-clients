@@ -1,13 +1,13 @@
 package com.soywiz.io.ktor.client.util
 
-import java.util.concurrent.*
+import java.util.*
 import kotlin.coroutines.experimental.*
 
 class Deferred<T> {
     var resolved = false
     var value: T? = null
     var exception: Throwable? = null
-    private var continuations = ConcurrentLinkedQueue<Continuation<T>>()
+    private var continuations = LinkedList<Continuation<T>>()
 
     fun resolve(value: T) {
         this.value = value
@@ -22,14 +22,14 @@ class Deferred<T> {
     }
 
     suspend fun await(): T = suspendCoroutine { c ->
-        continuations.add(c)
+        synchronized(continuations) { continuations.add(c) }
         flush()
     }
 
     private fun flush() {
         if (resolved) {
-            while (continuations.isNotEmpty()) {
-                val c = continuations.remove() ?: break
+            while (true) {
+                val c = synchronized(continuations) { if (continuations.isNotEmpty()) continuations.remove() else null } ?: break
                 if (exception != null) {
                     c.resumeWithException(exception!!)
                 } else {
