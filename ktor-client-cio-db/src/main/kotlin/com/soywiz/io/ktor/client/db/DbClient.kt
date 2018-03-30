@@ -1,6 +1,8 @@
 package com.soywiz.io.ktor.client.db
 
 import com.soywiz.io.ktor.client.util.*
+import kotlinx.coroutines.experimental.io.*
+import java.io.*
 import java.nio.charset.*
 import java.text.*
 import java.time.*
@@ -38,7 +40,7 @@ interface DbClient : AsyncCloseable, WithProperties {
                 '\t' -> out += "\\t"
                 '\u0026' -> out += "\\Z"
                 '\\' -> out += "\\\\"
-                //'%' -> out += "\\%"
+            //'%' -> out += "\\%"
                 '_' -> out += "\\_"
                 '`' -> out += "\\`"
                 else -> out += c
@@ -170,6 +172,16 @@ class DbClientWithStats(val client: DbClient, val handler: (info: DbQueryInfo) -
         }
     }
 }
+
+class DbClientProperties(
+    val reconnectionTime: Duration = Duration.ofSeconds(15L)
+)
+
+class DbClientConnection(
+    val read: ByteReadChannel,
+    val write: ByteWriteChannel,
+    val close: Closeable
+)
 
 /*
 

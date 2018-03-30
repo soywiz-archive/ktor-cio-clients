@@ -5,8 +5,10 @@ import com.soywiz.io.ktor.client.util.*
 import com.soywiz.io.ktor.client.util.sync.*
 import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.io.*
+import kotlinx.coroutines.experimental.time.*
 import java.io.*
 import java.net.*
+import java.time.*
 
 // https://www.postgresql.org/docs/9.3/static/protocol.html
 // https://www.postgresql.org/docs/9.3/static/protocol-message-formats.html
@@ -18,9 +20,8 @@ interface PostgreClient : DbClient {
 }
 
 private class InternalPostgreClient(
-    val read: ByteReadChannel,
-    val write: ByteWriteChannel,
-    val close: Closeable
+    val user: String, val password: String? = null, val database: String = user,
+    val connector: suspend () -> DbClientConnection
 ) : PostgreClient, WithProperties by WithProperties.Mixin() {
     override val notices = Signal<PostgreException>()
 
@@ -29,71 +30,97 @@ private class InternalPostgreClient(
     var processSecretKey = 0
 
     private val context = DbRowSetContext()
+    private val queryQueue = AsyncQueue()
+    var connection: DbClientConnection? = null
+    val write get() = connection!!.write
+    val read get() = connection!!.read
+    val close get() = connection!!.close
 
-    suspend fun startup(user: String, password: String?, database: String) {
-        write.writePostgreStartup(user, database)
-        readUpToReadyForQuery()
-        //println(params)
+    suspend fun ensure(): InternalPostgreClient = queryQueue {
+        while (true) {
+            if (connection == null) {
+                try {
+                    connection = connector()
+                    write.writePostgreStartup(user, database)
+                    readUpToReadyForQuery()
+                } catch (e: ConnectException) {
+                    e.printStackTrace()
+                }
+            }
+            if (connection != null && (read.isClosedForRead || write.isClosedForWrite)) connection = null
+
+            // DONE
+            if (connection != null) {
+                break
+            } else {
+                // RETRY
+                println("RETRY")
+                delay(Duration.ofSeconds(5L))
+            }
+        }
+
+        this
     }
 
-    private val queryQueue = AsyncQueue()
+    override suspend fun query(query: String): DbRowSet {
+        ensure()
+        return queryQueue {
+            //println("---------------------")
+            //println("QUERY: $query")
+            write.writePostgrePacket(PostgrePacket('Q') {
+                writeStringz(query)
+            })
+            var columns = DbColumns(listOf())
+            val rows = arrayListOf<DbRow>()
+            var exc: PostgreException? = null
+            read@ while (true) {
 
-    override suspend fun query(query: String): DbRowSet = queryQueue {
-        //println("---------------------")
-        //println("QUERY: $query")
-        write.writePostgrePacket(PostgrePacket('Q') {
-            writeStringz(query)
-        })
-        var columns = DbColumns(listOf())
-        val rows = arrayListOf<DbRow>()
-        var exc: PostgreException? = null
-        read@ while (true) {
-
-            val packet = read.readPostgrePacket()
-            //println("PACKET: ${packet.typeChar} : ${packet.payload.toString(Charsets.UTF_8)}")
-            when (packet.typeChar) {
-                'T' -> { // RowDescription (B)
-                    // https://www.postgresql.org/docs/9.2/static/catalog-pg-type.html
-                    columns = DbColumns(packet.read {
-                        (0 until readU16_be()).map {
-                            PostgreColumn(
-                                index = it,
-                                name = readStringz(),
-                                tableOID = readS32_be(),
-                                columnIndex = readU16_be(),
-                                typeOID = readS32_be(),
-                                typeSize = readS16_be(),
-                                typeMod = readS32_be(),
-                                text = readU16_be() == 0
-                            )
+                val packet = read.readPostgrePacket()
+                //println("PACKET: ${packet.typeChar} : ${packet.payload.toString(Charsets.UTF_8)}")
+                when (packet.typeChar) {
+                    'T' -> { // RowDescription (B)
+                        // https://www.postgresql.org/docs/9.2/static/catalog-pg-type.html
+                        columns = DbColumns(packet.read {
+                            (0 until readU16_be()).map {
+                                PostgreColumn(
+                                    index = it,
+                                    name = readStringz(),
+                                    tableOID = readS32_be(),
+                                    columnIndex = readU16_be(),
+                                    typeOID = readS32_be(),
+                                    typeSize = readS16_be(),
+                                    typeMod = readS32_be(),
+                                    text = readU16_be() == 0
+                                )
+                            }
+                        })
+                    }
+                    'D' -> { // DataRow (B)
+                        rows += DbRow(columns, packet.read {
+                            (0 until readU16_be()).map {
+                                readBytesExact(readS32_be())
+                            }
+                        })
+                    }
+                    else -> {
+                        val res = parsePacket(query, packet)
+                        when (res) {
+                            is EXC -> exc = res.exception
+                            END -> break@read // Ready for query
+                            else -> Unit
                         }
-                    })
-                }
-                'D' -> { // DataRow (B)
-                    rows += DbRow(columns, packet.read {
-                        (0 until readU16_be()).map {
-                            readBytesExact(readS32_be())
-                        }
-                    })
-                }
-                else -> {
-                    val res = parsePacket(query, packet)
-                    when (res) {
-                        is EXC -> exc = res.exception
-                        END -> break@read // Ready for query
-                        else -> Unit
                     }
                 }
             }
+            //println("+++++++++++++++++++")
+            if (exc != null) throw exc
+            return@queryQueue DbRowSet(columns, rows.toSuspendingSequence(), DbRowSetInfo(query = query))
         }
-        //println("+++++++++++++++++++")
-        if (exc != null) throw exc
-        return@queryQueue DbRowSet(columns, rows.toSuspendingSequence(), DbRowSetInfo(query = query))
     }
 
     suspend fun readUpToReadyForQuery() {
         var exc: PostgreException? = null
-        loop@while (true) {
+        loop@ while (true) {
             val packet = read.readPostgrePacket()
             val res = parsePacket("", packet)
             when (res) {
@@ -229,16 +256,12 @@ class PostgreException(val query: String, val items: List<String>) : RuntimeExce
 }
 
 suspend fun PostgreClient(
-    read: ByteReadChannel,
-    write: ByteWriteChannel,
-    close: Closeable,
     user: String,
     password: String? = null,
-    database: String = user
+    database: String = user,
+    connector: suspend () -> DbClientConnection
 ): PostgreClient {
-    val client = InternalPostgreClient(read, write, close)
-    client.startup(user, password, database)
-    return client
+    return InternalPostgreClient(user, password, database, connector).ensure()
 }
 
 suspend fun PostgreClient(
@@ -248,15 +271,14 @@ suspend fun PostgreClient(
     password: String? = null,
     database: String = user
 ): PostgreClient {
-    val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
-    return PostgreClient(
-        socket.openReadChannel(),
-        socket.openWriteChannel(autoFlush = false),
-        socket,
-        user,
-        password,
-        database
-    )
+    return PostgreClient(user, password, database) {
+        val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
+        DbClientConnection(
+            socket.openReadChannel(),
+            socket.openWriteChannel(autoFlush = false),
+            socket
+        )
+    }
 }
 
 class PostgrePacket(val typeChar: Char, val payload: ByteArray) {
