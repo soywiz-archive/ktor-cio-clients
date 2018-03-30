@@ -1,5 +1,6 @@
 package com.soywiz.io.ktor.client.mysql
 
+import com.soywiz.io.ktor.client.db.*
 import com.soywiz.io.ktor.client.util.*
 import com.soywiz.io.ktor.client.util.sync.*
 import io.ktor.network.sockets.*
@@ -7,31 +8,12 @@ import io.ktor.network.sockets.Socket
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.ByteOrder
 import java.io.*
-import java.math.*
+import java.io.EOFException
 import java.net.*
 import java.nio.charset.*
 import java.security.*
 import java.text.*
-import java.util.*
 import kotlin.math.*
-
-data class MysqlColumn(
-    val catalog: String,
-    val schema: String,
-    val tableAlias: String,
-    val table: String,
-    val columnAlias: String,
-    val column: String,
-    val lenFixedFields: Long,
-    val characterSet: Int,
-    val maxColumnSize: Int,
-    val fieldType: MysqlFieldType,
-    val fieldDetailFlag: Int, // MysqlFieldDetail
-    val decimals: Int,
-    val unused: Int
-) {
-    override fun toString(): String = "MysqlColumn($columnAlias)"
-}
 
 object MysqlFieldDetail {
     val NOT_NULL = 1 // field cannot be null
@@ -65,44 +47,12 @@ enum class MysqlFieldType(val id: Int) {
     }
 }
 
-data class MysqlColumns(val columns: List<MysqlColumn> = listOf()) : Collection<MysqlColumn> by columns {
-    val columnIndex = columns.withIndex().map { it.value.columnAlias to it.index }.toMap()
-}
-
-data class MysqlRow(val columns: MysqlColumns, val data: List<Any?>) : List<Any?> by data {
-    fun raw(name: String): Any? = columns.columnIndex[name]?.let { data[it] }
-    fun int(name: String): Int? = (raw(name) as? Number?)?.toInt()
-    fun long(name: String): Long? = (raw(name) as? Number?)?.toLong()
-    fun double(name: String): Double? = (raw(name) as? Number?)?.toDouble()
-    fun string(name: String): String? = (raw(name))?.toString()
-    fun byteArray(name: String): ByteArray? = raw(name) as? ByteArray?
-    fun date(name: String): Date? = raw(name) as? Date?
-
-    fun raw(index: Int): Any? = data.getOrNull(index)
-    fun int(index: Int): Int? = (raw(index) as? Number?)?.toInt()
-    fun long(index: Int): Long? = (raw(index) as? Number?)?.toLong()
-    fun double(index: Int): Double? = (raw(index) as? Number?)?.toDouble()
-    fun string(index: Int): String? = (raw(index))?.toString()
-    fun byteArray(index: Int): ByteArray? = raw(index) as? ByteArray?
-    fun date(index: Int): Date? = raw(index) as? Date?
-
-    override fun toString(): String =
-        "MysqlRow(" + columns.zip(data).map { "${it.first.columnAlias}=${it.second}" }.joinToString(", ") + ")"
-}
-
-typealias MysqlRows = SuspendingSequence<MysqlRow>
-
-fun MysqlRows(columns: MysqlColumns, list: List<MysqlRow>): MysqlRows {
-    return list.toSuspendingSequence()
-}
 
 class MysqlException(val errorCode: Int, val sqlState: String, message: String) : Exception(message) {
     override fun toString(): String = "MysqlException($errorCode, '$sqlState', '$message')"
 }
 
-interface Mysql : AsyncCloseable {
-    suspend fun query(query: String): MysqlRows
-    override suspend fun close(): Unit
+interface Mysql : DbClient {
 }
 
 // https://dev.mysql.com/doc/refman/5.7/en/string-literals.html#character-escape-sequences
@@ -127,6 +77,7 @@ fun String.mysqlEscape(): String {
     }
     return out
 }
+
 fun String.mysqlQuote(): String = "'${this.mysqlEscape()}'"
 fun String.mysqlTableQuote(): String = "`${this.mysqlEscape()}`"
 
@@ -143,8 +94,8 @@ fun Mysql(
 }
 
 
-class MysqlClientMulti : Mysql {
-    override suspend fun query(query: String): MysqlRows = TODO()
+class MysqlClientMulti : Mysql, WithProperties by WithProperties.Mixin() {
+    override suspend fun query(query: String): DbRowSet = TODO()
     override suspend fun close() = TODO()
 }
 
@@ -154,7 +105,7 @@ class MysqlClientLazy(
     val user: String = "root",
     val password: String = "",
     val database: String? = null
-) : Mysql {
+) : Mysql, WithProperties by WithProperties.Mixin() {
     private var client: Mysql? = null
 
     private suspend fun initOnce(): Mysql {
@@ -164,7 +115,7 @@ class MysqlClientLazy(
         return client!!
     }
 
-    override suspend fun query(query: String): MysqlRows = initOnce().query(query)
+    override suspend fun query(query: String): DbRowSet = initOnce().query(query)
     override suspend fun close(): Unit = initOnce().close()
 }
 
@@ -182,8 +133,17 @@ class MysqlClient private constructor(
     private val read: ByteReadChannel,
     private val write: ByteWriteChannel,
     private val close: Closeable
-) : Mysql {
+) : Mysql, WithProperties by WithProperties.Mixin() {
     private val charset = Charsets.UTF_8
+
+    private val context by lazy {
+        DbRowSetContext(
+            charset = charset,
+            timeFormat = TIME_FORMAT,
+            dateFormat = DATE_FORMAT,
+            datetimeFormat = DATETIME_FORMAT
+        )
+    }
 
     companion object {
         suspend operator fun invoke(
@@ -399,7 +359,8 @@ class MysqlClient private constructor(
         for (n in 0 until this.size) this[n] = (a[n].toInt() xor b[n].toInt()).toByte()
     }
 
-    private suspend fun readResponse(): MysqlRows = readPacket {
+
+    private suspend fun readResponse(query: String): DbRowSet = readPacket {
         val kind = readU8()
         when (kind) {
             0x00 -> { // OK
@@ -408,7 +369,7 @@ class MysqlClient private constructor(
                 val serverStatus = readU16_le()
                 val warningCount = readU16_le()
                 val info = readBytesAvailable()
-                MysqlRows(MysqlColumns(), listOf())
+                DbRowSet(DbColumns(listOf(), context), listOf<DbRow>().toSuspendingSequence(), DbRowSetInfo(query = query))
             }
             0xFB, 0xFE -> { // LOCAL_INFILE, PACKET_LOCAL_INFILE
                 val filename = readEofString(charset)
@@ -439,10 +400,11 @@ class MysqlClient private constructor(
                     0xFD -> readU24_le()
                     else -> kind
                 }
-                val columns = MysqlColumns((0 until columnCount).map {
+                val columns = DbColumns((0 until columnCount).map { index ->
                     // https://mariadb.com/kb/en/library/resultset/#column-definition-packet
                     readPacket {
                         MysqlColumn(
+                            index = index,
                             catalog = readLenencString(charset),
                             schema = readLenencString(charset),
                             tableAlias = readLenencString(charset),
@@ -458,27 +420,29 @@ class MysqlClient private constructor(
                             unused = readS16_le()
                         )
                     }
-                })
+                }, context)
 
                 readPacket {
                     // EOF
                 }
 
                 // https://mariadb.com/kb/en/library/resultset-row/
-                val rows = arrayListOf<MysqlRow>()
+                val rows = arrayListOf<DbRow>()
                 try {
                     while (true) {
                         rows += readPacket { packet ->
-                            val cells = arrayListOf<Any?>()
+                            val cells = arrayListOf<ByteArray?>()
                             for (column in columns) {
                                 val data = try {
                                     readLenencBytes()
                                 } catch (e: NullPointerException) {
                                     null
                                 }
+                                cells += data
                                 //println("DATA: ${column.fieldType}, $data")
                                 //column.fieldDetailFlag and MysqlFieldDetail.NOT_NULL
-                                cells += if (data == null) null else when (column.fieldType) {
+                                /*
+                                cells += if (data == null) null else when ((column as MysqlColumn).fieldType) {
                                     MysqlFieldType.NULL -> null
                                     MysqlFieldType.TINY, MysqlFieldType.SHORT, MysqlFieldType.LONG, MysqlFieldType.INT24, MysqlFieldType.YEAR ->
                                         data.toString(charset).toInt()
@@ -503,14 +467,15 @@ class MysqlClient private constructor(
                                     MysqlFieldType.ENUM -> TODO()
                                     MysqlFieldType.GEOMETRY -> TODO()
                                 }
+                                */
                             }
-                            MysqlRow(columns, cells)
+                            DbRow(columns, cells)
                         }
                     }
                 } catch (e: EOFException) {
 
                 }
-                MysqlRows(columns, rows)
+                DbRowSet(columns, rows.toSuspendingSequence(), DbRowSetInfo(query = query))
             }
 
         }
@@ -519,14 +484,14 @@ class MysqlClient private constructor(
     suspend private fun init(user: String, password: String, database: String?) {
         val serverInfo = readHandshake()
         writeHandshake(serverInfo, user, password, database)
-        readResponse()
+        readResponse("hanshake")
     }
 
-    override suspend fun query(query: String): MysqlRows {
+    override suspend fun query(query: String): DbRowSet {
         // @TODO: Wait/force completion of the previous query
         packetNum = 0
         writeQuery(query)
-        return readResponse()
+        return readResponse(query)
     }
 
     override suspend fun close() {
@@ -589,3 +554,22 @@ class MysqlClient private constructor(
     }
 }
 
+data class MysqlColumn(
+    override val index: Int,
+    val catalog: String,
+    val schema: String,
+    val tableAlias: String,
+    val table: String,
+    val columnAlias: String,
+    val column: String,
+    val lenFixedFields: Long,
+    val characterSet: Int,
+    val maxColumnSize: Int,
+    val fieldType: MysqlFieldType,
+    val fieldDetailFlag: Int, // MysqlFieldDetail
+    val decimals: Int,
+    val unused: Int
+) : DbColumn {
+    override val name get() = column
+    override fun toString(): String = "MysqlColumn($columnAlias)"
+}

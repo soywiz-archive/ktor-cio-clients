@@ -1,5 +1,5 @@
 dependencies {
     compile "io.ktor:ktor-network:$ktor_version"
 
-    compile project(":ktor-client-cio-util")
+    compile project(":ktor-client-cio-db")
 }

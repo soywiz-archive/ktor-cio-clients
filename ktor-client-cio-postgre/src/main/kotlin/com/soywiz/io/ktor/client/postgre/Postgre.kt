@@ -1,5 +1,6 @@
 package com.soywiz.io.ktor.client.postgre
 
+import com.soywiz.io.ktor.client.db.*
 import com.soywiz.io.ktor.client.util.*
 import com.soywiz.io.ktor.client.util.sync.*
 import io.ktor.network.sockets.*
@@ -12,43 +13,48 @@ import java.net.*
 // https://www.postgresql.org/docs/9.3/static/protocol-flow.html
 // https://www.postgresql.org/docs/9.2/static/datatype-oid.html
 
-interface PostgreClient {
+interface PostgreClient : DbClient {
     val notices: Signal<PostgreException>
-    suspend fun query(str: String): PostgreRowSet
-    suspend fun close(): Unit
 }
 
 private class InternalPostgreClient(
     val read: ByteReadChannel,
     val write: ByteWriteChannel,
     val close: Closeable
-) : PostgreClient {
+) : PostgreClient, WithProperties by WithProperties.Mixin() {
     override val notices = Signal<PostgreException>()
 
     var params = LinkedHashMap<String, String>()
     var processId = 0
     var processSecretKey = 0
 
+    private val context = DbRowSetContext()
+
     suspend fun startup(user: String, password: String?, database: String) {
         write.writePostgreStartup(user, database)
         readUpToReadyForQuery()
-        println(params)
+        //println(params)
     }
 
     private val queryQueue = AsyncQueue()
 
-    override suspend fun query(str: String): PostgreRowSet = queryQueue {
+    override suspend fun query(query: String): DbRowSet = queryQueue {
+        //println("---------------------")
+        //println("QUERY: $query")
         write.writePostgrePacket(PostgrePacket('Q') {
-            writeStringz(str)
+            writeStringz(query)
         })
-        var columns = PostgreColumns(listOf())
-        val rows = arrayListOf<PostgreRow>()
+        var columns = DbColumns(listOf())
+        val rows = arrayListOf<DbRow>()
+        var exc: PostgreException? = null
         read@ while (true) {
+
             val packet = read.readPostgrePacket()
+            //println("PACKET: ${packet.typeChar} : ${packet.payload.toString(Charsets.UTF_8)}")
             when (packet.typeChar) {
                 'T' -> { // RowDescription (B)
                     // https://www.postgresql.org/docs/9.2/static/catalog-pg-type.html
-                    columns = PostgreColumns(packet.read {
+                    columns = DbColumns(packet.read {
                         (0 until readU16_be()).map {
                             PostgreColumn(
                                 index = it,
@@ -64,32 +70,47 @@ private class InternalPostgreClient(
                     })
                 }
                 'D' -> { // DataRow (B)
-                    rows += PostgreRow(columns, packet.read {
+                    rows += DbRow(columns, packet.read {
                         (0 until readU16_be()).map {
                             readBytesExact(readS32_be())
                         }
                     })
                 }
                 else -> {
-                    if (parsePacket(packet)) {
-                        break@read // Ready for query
+                    val res = parsePacket(query, packet)
+                    when (res) {
+                        is EXC -> exc = res.exception
+                        END -> break@read // Ready for query
+                        else -> Unit
                     }
                 }
             }
         }
-        return@queryQueue PostgreRowSet(columns, rows.toSuspendingSequence())
+        //println("+++++++++++++++++++")
+        if (exc != null) throw exc
+        return@queryQueue DbRowSet(columns, rows.toSuspendingSequence(), DbRowSetInfo(query = query))
     }
 
     suspend fun readUpToReadyForQuery() {
-        while (true) {
+        var exc: PostgreException? = null
+        loop@while (true) {
             val packet = read.readPostgrePacket()
-            if (parsePacket(packet)) {
-                break // Ready for query
+            val res = parsePacket("", packet)
+            when (res) {
+                is EXC -> exc = res.exception
+                END -> break@loop // Ready for query
+                else -> Unit
             }
         }
+        if (exc != null) throw exc
     }
 
-    suspend fun parsePacket(packet: PostgrePacket): Boolean {
+    interface Result
+    object CONTINUE : Result
+    object END : Result
+    class EXC(val exception: PostgreException) : Result
+
+    suspend fun parsePacket(query: String, packet: PostgrePacket): Result {
         val packetType = packet.typeChar
         when (packetType) {
             'R' -> {
@@ -97,7 +118,7 @@ private class InternalPostgreClient(
                     val type = readS32_be()
                     when (type) {
                         0 -> { // AuthenticationOk
-                            return@read false
+                            return@read CONTINUE
                         }
                         2 -> { // AuthenticationKerberosV5
                             TODO("AuthenticationKerberosV5")
@@ -150,20 +171,21 @@ private class InternalPostgreClient(
                     // 'T' if in a transaction block
                     // 'E' if in a failed transaction
                 }
-                return true
+                return END
             }
             'C' -> { // CommandComplete
                 val command = packet.read {
                     readStringz()
                 }
+                //println("CommandComplete: $command")
             }
             'E', 'N' -> {
                 val parts = packet.read {
                     mapWhile({ available() > 0 }) { readStringz() }
                 }
                 when (packetType) {
-                    'E' -> throw PostgreException(parts)
-                    'N' -> notices(PostgreException(parts))
+                    'E' -> return EXC(PostgreException(query, parts))
+                    'N' -> notices(PostgreException(query, parts))
                 }
             }
             else -> {
@@ -172,7 +194,7 @@ private class InternalPostgreClient(
                 println(packet.payload.toString(Charsets.UTF_8))
             }
         }
-        return false
+        return CONTINUE
     }
 
     override suspend fun close(): Unit {
@@ -180,7 +202,7 @@ private class InternalPostgreClient(
     }
 }
 
-class PostgreException(val items: List<String>) : RuntimeException() {
+class PostgreException(val query: String, val items: List<String>) : RuntimeException() {
     val parts by lazy {
         items.filter { it.isNotEmpty() }.associate { it.first() to it.substring(1) }
     }
@@ -203,43 +225,8 @@ class PostgreException(val items: List<String>) : RuntimeException() {
     val line: String? get() = parts['L'] // Line: the line number of the source-code location where the error was reported.
     val routine: String? get() = parts['R'] // Routine: the name of the source-code routine reporting the error.
 
-    override val message: String? = "$severity: $pmessage ($parts)"
+    override val message: String? = "$severity: $pmessage ($parts) for query=$query"
 }
-
-data class PostgreColumns(val columns: List<PostgreColumn>) : Iterable<PostgreColumn> by columns {
-    val columnsByName = columns.associateBy { it.name }
-    operator fun get(name: String) = columnsByName[name]
-    operator fun get(index: Int) = columns.getOrNull(index)
-}
-
-data class PostgreColumn(
-    val index: Int,
-    val name: String, val tableOID: Int, val columnIndex: Int, val typeOID: Int,
-    val typeSize: Int,
-    val typeMod: Int,
-    val text: Boolean
-)
-
-class PostgreRow(val columns: PostgreColumns, val cells: List<ByteArray>) : List<ByteArray> by cells {
-    fun bytes(key: Int) = cells.getOrNull(key)
-    fun bytes(key: String) = columns[key]?.let { bytes(it.index) }
-
-    fun string(key: Int) = bytes(key)?.toString(Charsets.UTF_8)
-    fun string(key: String) = bytes(key)?.toString(Charsets.UTF_8)
-
-    fun int(key: Int) = string(key)?.toInt()
-    fun int(key: String) = string(key)?.toInt()
-
-    operator fun get(key: String) = bytes(key)
-
-    val pairs get() = columns.columns.map { it.name }.zip(cells)
-    override fun toString(): String = "PostgreRow($pairs)"
-}
-
-class PostgreRowSet(
-    val columns: PostgreColumns,
-    val rows: SuspendingSequence<PostgreRow>
-) : SuspendingSequence<PostgreRow> by rows
 
 suspend fun PostgreClient(
     read: ByteReadChannel,
@@ -330,11 +317,13 @@ private suspend fun ByteWriteChannel._writePostgrePacket(packet: PostgrePacket, 
 internal suspend fun ByteWriteChannel.writePostgrePacket(packet: PostgrePacket) =
     _writePostgrePacket(packet, first = false)
 
-private inline fun <T> mapWhile(cond: () -> Boolean, generator: () -> T): List<T> {
-    val out = arrayListOf<T>()
-    while (cond()) out += generator()
-    return out
-}
+data class PostgreColumn(
+    override val index: Int,
+    override val name: String, val tableOID: Int, val columnIndex: Int, val typeOID: Int,
+    val typeSize: Int,
+    val typeMod: Int,
+    val text: Boolean
+) : DbColumn
 
 fun String.postgreEscape(): String {
     var out = ""
@@ -357,5 +346,6 @@ fun String.postgreEscape(): String {
     }
     return out
 }
+
 fun String.postgreQuote(): String = "'${this.postgreEscape()}'"
 fun String.postgreTableQuote(): String = "`${this.postgreEscape()}`"
