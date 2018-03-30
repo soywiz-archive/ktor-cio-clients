@@ -13,6 +13,16 @@ interface DbClient : AsyncCloseable, WithProperties {
     suspend fun transactionRollback(): Unit = run { query("ROLLBACK TRANSACTION;") }
     suspend fun transactionCommit(): Unit = run { query("COMMIT TRANSACTION;") }
 
+    suspend fun transaction(callback: suspend DbClient.(DbClient) -> Unit) {
+        transactionStart()
+        try {
+            callback(this)
+        } catch (e: Throwable) {
+            transactionRollback()
+            throw e
+        }
+        transactionCommit()
+    }
 
     // https://dev.mysql.com/doc/refman/5.7/en/string-literals.html#character-escape-sequences
     fun escape(str: String): String {
@@ -159,24 +169,6 @@ class DbClientWithStats(val client: DbClient, val handler: (info: DbQueryInfo) -
             })
         }
     }
-}
-
-class DbTransaction(val db: DbClient) : DbClient by db {
-    @PublishedApi
-    internal suspend inline fun transaction(callback: DbTransaction.() -> Unit) {
-        db.transactionStart()
-        try {
-            callback()
-        } catch (e: Throwable) {
-            db.transactionRollback()
-            throw e
-        }
-        db.transactionCommit()
-    }
-}
-
-suspend inline fun DbClient.transaction(callback: DbTransaction.() -> Unit) {
-    DbTransaction(this).transaction(callback)
 }
 
 /*

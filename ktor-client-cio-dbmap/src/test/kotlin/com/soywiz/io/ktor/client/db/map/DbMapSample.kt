@@ -21,17 +21,34 @@ object DbMapSample {
     @JvmStatic
     fun main(args: Array<String>) {
         runBlocking {
-            val db = PostgreClient(user = "ktor-cio-sample", database = "ktor-cio-sample").apply {
-                notices {
-                    //println("NOTICE: $it")
+            val db = DbClientPool { index ->
+                println("Crrating postgre client: $index")
+                PostgreClient(user = "ktor-cio-sample", database = "ktor-cio-sample").apply {
+                    notices {
+                        //println("NOTICE: $it")
+                    }
+                }.withInfoHook {
+                    println("$this")
                 }
-            }.withInfoHook {
-                //println("$this")
             }
 
-            db.transaction {
-                db.createTable<City>()
-                db.createTable<Counter>()
+            db.createTable<City>()
+            db.createTable<Counter>()
+
+            launch {
+                println(db.count<City> { City::name EQ "test" })
+                println(db.count<City> { City::name EQ "test" })
+            }
+
+            launch {
+                println(db.count<City> { City::name EQ "test" })
+            }
+
+            launch {
+                println(db.count<City> { City::name EQ "test" })
+            }
+
+            db.transaction { db ->
                 //ignoreErrors { db.insert(Counter("mycounter")) }
 
                 val lastInsertId = db.insert(City("test"))
@@ -52,6 +69,7 @@ object DbMapSample {
                 //val counter2 = db.first<Counter> { Counter::name EQ "mycounter" }
                 //println("COUNTER: $counter -> $counter2")
                 println("COUNTER: $counter")
+                println(db.count<City> { City::id LT 10})
                 //db.delete<Counter>(counter)
                 //throw RuntimeException("NONE!")
             }
