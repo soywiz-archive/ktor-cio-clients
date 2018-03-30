@@ -409,9 +409,11 @@ fun ByteArray.readInt_be(offset: Int): Int {
 internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean): PostgrePacket {
     readByteOrder = POSTGRE_ENDIAN
 
+    // @TODO: Read strange values under pressure
     //val type = if (readType) readByte().toChar() else '\u0000'
     //val size = readInt()
 
+    // @TODO: Works fine
     val header = ByteArray(if (readType) 5 else 4)
     readFully(header)
     val type = if (readType) (header[0].toInt() and 0xFF).toChar() else '\u0000'
