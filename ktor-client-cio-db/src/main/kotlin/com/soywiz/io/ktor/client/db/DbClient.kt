@@ -174,7 +174,11 @@ class DbClientWithStats(val client: DbClient, val handler: (info: DbQueryInfo) -
 }
 
 class DbClientProperties(
-    val reconnectionTime: Duration = Duration.ofSeconds(15L)
+    val user: String,
+    val password: String? = null,
+    val database: String = user,
+    val reconnectionTime: Duration = Duration.ofSeconds(15L),
+    val debug: Boolean = false
 )
 
 class DbClientConnection(
