@@ -22,7 +22,7 @@ allprojects {
     apply plugin: 'com.jfrog.bintray'
 
     group 'com.soywiz.io.ktor'
-    version '0.0.3'
+    version '0.0.4'
 
     sourceCompatibility = 1.8
     compileKotlin.kotlinOptions.jvmTarget = "1.8"

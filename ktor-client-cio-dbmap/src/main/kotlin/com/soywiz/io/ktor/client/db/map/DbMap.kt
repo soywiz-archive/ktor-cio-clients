@@ -36,7 +36,7 @@ fun <T : Any> convertStringToUnsafe(value: String?, to: KClass<T>): Any? {
         to.isInstance(value) -> value
         to.isSubclassOf(Int::class) -> value?.toIntOrNull() ?: 0
         to.isSubclassOf(Long::class) -> value?.toLongOrNull() ?: 0L
-        to.isSubclassOf(String::class) -> value
+        to.isSubclassOf(String::class) -> value ?: ""
         else -> TODO("Unsupported")
     }
 }
@@ -51,7 +51,8 @@ fun <T : Any> Any?.convertTo(to: KClass<T>): T? {
 
 class TableInfo<T : Any>(val db: DbClient, val klazz: KClass<T>) {
     val clazz = klazz.java
-    val tableName: String get() = klazz.simpleName ?: "unknown" // Allow aliases
+    private val annotationTableName = klazz.findAnnotation<Name>()
+    val tableName: String get() = annotationTableName?.name ?: klazz.simpleName ?: "unknown"
     val quotedTableName by lazy { db.quoteTable(tableName) }
 
     val primaryConstructor = klazz.primaryConstructor ?: error("No primary constructor")
@@ -60,8 +61,9 @@ class TableInfo<T : Any>(val db: DbClient, val klazz: KClass<T>) {
     inner class Column(val prop: KProperty1<T, *>) {
         val klazz = prop.returnType.jvmErasure
         val param = primaryParams[prop.name]
+        private val annotationName = prop.findAnnotation<Name>()
 
-        val name get() = prop.name // Allow aliases
+        val name get() = annotationName?.name ?: prop.name
         val primaryKey = param?.findAnnotation<Primary>() != null || prop?.findAnnotation<Primary>() != null
         val unique = param?.findAnnotation<Unique>() != null || prop?.findAnnotation<Unique>() != null
         val nullable = prop.returnType.isMarkedNullable

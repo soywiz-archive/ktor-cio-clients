@@ -10,5 +10,6 @@ fun <T> AUTO(type: Class<T>): T {
 
 annotation class Primary
 annotation class Unique
+annotation class Name(val name: String)
 
 inline fun <reified T> AUTO(): T = AUTO(T::class.java)

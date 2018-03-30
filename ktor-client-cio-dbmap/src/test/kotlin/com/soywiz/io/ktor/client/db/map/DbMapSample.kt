@@ -28,7 +28,7 @@ object DbMapSample {
                         //println("NOTICE: $it")
                     }
                 }.withInfoHook {
-                    println("$this")
+                    println("PG[$index]:$this")
                 }
             }
 
@@ -56,7 +56,7 @@ object DbMapSample {
 
                 for (item in db.find<City>(
                     limit = 10,
-                    fields = listOf(City::name, City::id),
+                    fields = listOf(City::id),
                     orderBy = City::id.DESC() AND City::name.ASC()
                 ) { City::id GT 4 }) {
                     println(item)
