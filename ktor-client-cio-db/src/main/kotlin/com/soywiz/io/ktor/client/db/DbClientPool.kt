@@ -21,5 +21,9 @@ class DbClientPool(
     }
 
     override suspend fun close() {
+        while (pool.availableFreed > 0) {
+            val client = pool.alloc()
+            client.close()
+        }
     }
 }

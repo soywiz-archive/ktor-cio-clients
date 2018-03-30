@@ -22,7 +22,7 @@ object DbMapSample {
     fun main(args: Array<String>) {
         runBlocking {
             val db = DbClientPool { index ->
-                println("Crrating postgre client: $index")
+                println("Creating postgre client: $index")
                 PostgreClient(user = "ktor-cio-sample", database = "ktor-cio-sample").apply {
                     notices {
                         //println("NOTICE: $it")
@@ -35,16 +35,16 @@ object DbMapSample {
             db.createTable<City>()
             db.createTable<Counter>()
 
-            launch {
+            val job1 = launch {
                 println(db.count<City> { City::name EQ "test" })
                 println(db.count<City> { City::name EQ "test" })
             }
 
-            launch {
+            val job2 = launch {
                 println(db.count<City> { City::name EQ "test" })
             }
 
-            launch {
+            val job3 = launch {
                 println(db.count<City> { City::name EQ "test" })
             }
 
@@ -73,6 +73,12 @@ object DbMapSample {
                 //db.delete<Counter>(counter)
                 //throw RuntimeException("NONE!")
             }
+
+            job1.join()
+            job2.join()
+            job3.join()
+
+            db.close()
 
             /*
 
