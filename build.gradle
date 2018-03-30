@@ -1,6 +1,6 @@
 buildscript {
-    ext.kotlin_version = '1.2.30'
-    ext.ktor_version = '0.9.1'
+    ext.kotlin_version = '1.2.31'
+    ext.ktor_version = '0.9.2-alpha-5'
     ext.kotlinx_coroutines = '0.22.3'
 
     repositories {
@@ -22,7 +22,7 @@ allprojects {
     apply plugin: 'com.jfrog.bintray'
 
     group 'com.soywiz.io.ktor'
-    version '0.0.2'
+    version '0.0.3'
 
     sourceCompatibility = 1.8
     compileKotlin.kotlinOptions.jvmTarget = "1.8"
