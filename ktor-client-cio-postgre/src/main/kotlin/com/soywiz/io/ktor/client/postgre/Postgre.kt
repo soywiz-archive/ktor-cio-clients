@@ -15,6 +15,7 @@ import java.net.*
 interface PostgreClient {
     val notices: Signal<PostgreException>
     suspend fun query(str: String): PostgreRowSet
+    suspend fun close(): Unit
 }
 
 private class InternalPostgreClient(
@@ -173,6 +174,10 @@ private class InternalPostgreClient(
         }
         return false
     }
+
+    override suspend fun close(): Unit {
+        this.close.close()
+    }
 }
 
 class PostgreException(val items: List<String>) : RuntimeException() {
@@ -330,3 +335,27 @@ private inline fun <T> mapWhile(cond: () -> Boolean, generator: () -> T): List<T
     while (cond()) out += generator()
     return out
 }
+
+fun String.postgreEscape(): String {
+    var out = ""
+    for (c in this) {
+        when (c) {
+            '\u0000' -> out += "\\0"
+            '\'' -> out += "\\'"
+            '\"' -> out += "\\\""
+            '\b' -> out += "\\b"
+            '\n' -> out += "\\n"
+            '\r' -> out += "\\r"
+            '\t' -> out += "\\t"
+            '\u0026' -> out += "\\Z"
+            '\\' -> out += "\\\\"
+            '%' -> out += "\\%"
+            '_' -> out += "\\_"
+            '`' -> out += "\\`"
+            else -> out += c
+        }
+    }
+    return out
+}
+fun String.postgreQuote(): String = "'${this.postgreEscape()}'"
+fun String.postgreTableQuote(): String = "`${this.postgreEscape()}`"
