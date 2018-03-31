@@ -51,6 +51,7 @@ class PostgreStats internal constructor(private val client: InternalPostgreClien
 
 internal class InternalPostgreClient(
     val props: DbClientProperties,
+    val config: PostgresConfig,
     val connector: suspend () -> DbClientConnection
 ) : PostgreClient, WithProperties by WithProperties.Mixin() {
     override val notices = Signal<PostgreException>()
@@ -162,7 +163,7 @@ internal class InternalPostgreClient(
                         var exc: PostgreException? = null
                         read@ while (true) {
 
-                            val packet = read.readPostgrePacket()
+                            val packet = read.readPostgrePacket(config)
                             debug { "PACKET: ${packet.typeChar} : ${packet.payload.toString(Charsets.UTF_8)}" }
                             when (packet.typeChar) {
                                 'T' -> { // RowDescription (B)
@@ -219,7 +220,7 @@ internal class InternalPostgreClient(
     suspend private fun readUpToReadyForQuery() {
         var exc: PostgreException? = null
         loop@ while (true) {
-            val packet = read.readPostgrePacket()
+            val packet = read.readPostgrePacket(config)
             val res = parsePacket("", packet)
             when (res) {
                 is EXC -> exc = res.exception
@@ -357,11 +358,16 @@ suspend fun PostgreClient(
     user: String,
     password: String? = null,
     database: String = user,
-    debug: Boolean = false,
+    config: PostgresConfig = PostgresConfig(),
     connector: suspend () -> DbClientConnection
 ): PostgreClient {
-    return InternalPostgreClient(DbClientProperties(user, password, database, debug = debug), connector).ensure()
+    return InternalPostgreClient(DbClientProperties(user, password, database, debug = config.debug), config, connector).ensure()
 }
+
+class PostgresConfig(
+    val debug: Boolean = false,
+    val useByteReadReadInt: Boolean = false
+)
 
 suspend fun PostgreClient(
     user: String,
@@ -369,9 +375,9 @@ suspend fun PostgreClient(
     port: Int = 5432,
     password: String? = null,
     database: String = user,
-    debug: Boolean = false
+    config: PostgresConfig = PostgresConfig()
 ): PostgreClient {
-    return PostgreClient(user, password, database, debug = debug) {
+    return PostgreClient(user, password, database, config = config) {
         val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
         DbClientConnection(
             socket.openReadChannel(),
@@ -391,8 +397,8 @@ inline fun PostgrePacket(typeChar: Char, callback: ByteArrayOutputStream.() -> U
     return PostgrePacket(typeChar, buildByteArray(callback))
 }
 
-internal suspend fun ByteReadChannel.readPostgrePacket(): PostgrePacket {
-    return _readPostgrePacket(readType = true)
+internal suspend fun ByteReadChannel.readPostgrePacket(config: PostgresConfig): PostgrePacket {
+    return _readPostgrePacket(true, config)
 }
 
 private val POSTGRE_ENDIAN = ByteOrder.BIG_ENDIAN
@@ -406,18 +412,23 @@ fun ByteArray.readInt_be(offset: Int): Int {
     return (b0 shl 24) or (b1 shl 16) or (b2 shl 8) or (b3 shl 0)
 }
 
-internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean): PostgrePacket {
+internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean, config: PostgresConfig): PostgrePacket {
     readByteOrder = POSTGRE_ENDIAN
 
-    // @TODO: Read strange values under pressure
-    //val type = if (readType) readByte().toChar() else '\u0000'
-    //val size = readInt()
+    val type: Char
+    val size: Int
 
-    // @TODO: Works fine
-    val header = ByteArray(if (readType) 5 else 4)
-    readFully(header)
-    val type = if (readType) (header[0].toInt() and 0xFF).toChar() else '\u0000'
-    val size = if (readType) header.readInt_be(1) else header.readInt_be(0)
+    if (config.useByteReadReadInt) {
+        // @TODO: Read strange values under pressure
+        type = if (readType) readByte().toChar() else '\u0000'
+        size = readInt()
+    } else {
+        // @TODO: Works fine
+        val header = ByteArray(if (readType) 5 else 4)
+        readFully(header)
+        type = if (readType) (header[0].toInt() and 0xFF).toChar() else '\u0000'
+        size = if (readType) header.readInt_be(1) else header.readInt_be(0)
+    }
 
     val payloadSize = size - 4
     if (payloadSize < 0) {

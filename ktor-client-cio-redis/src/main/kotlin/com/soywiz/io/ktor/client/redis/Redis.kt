@@ -138,6 +138,7 @@ class Redis(
         private val valueSB = StringBuilder(1024)
         private val valueCB = CharBuffer.allocate(1024)
         private val valueBB = ByteBuffer.allocate((1024 / charsetDecoder.maxCharsPerByte()).toInt())
+        private val tempCRLF = ByteArray(2)
         private suspend fun readValue(): Any? {
             val reader = reader()
 
@@ -161,7 +162,8 @@ class Redis(
                         null
                     } else {
                         val data = reader.readBytesExact(bytesToRead)
-                        reader.readShort() // CR LF
+                        reader.readFully(tempCRLF) // CR LF
+                        //reader.readShort() // CR LF
                         data.toString(charset).apply {
                             debug { "Redis[RECV][data]: $this" }
                         }

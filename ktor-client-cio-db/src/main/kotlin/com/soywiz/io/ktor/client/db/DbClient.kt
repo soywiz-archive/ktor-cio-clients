@@ -114,7 +114,7 @@ class DbRow(val columns: DbColumns, val cells: List<ByteArray?>) : List<Any?> {
     operator fun get(key: String) = bytes(key)
 
     val pairs get() = columns.columns.map { it.name }.zip(typedList)
-    override fun toString(): String = "DbRow($pairs)"
+    override fun toString(): String = "{${pairs.map { "${it.first}=${it.second}" }.joinToString(", ")}}"
 
     //////////////////////////////////////////////////////////////
 
