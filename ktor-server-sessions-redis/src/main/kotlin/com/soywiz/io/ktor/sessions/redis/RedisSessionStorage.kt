@@ -24,16 +24,20 @@ abstract class SimplifiedSessionStorage : SessionStorage {
 
     override suspend fun write(id: String, provider: suspend (ByteWriteChannel) -> Unit) {
         return provider(reader(coroutineContext, autoFlush = true) {
-            val data = ByteArrayOutputStream()
-            val temp = ByteArray(1024)
-            while (!channel.isClosedForRead) {
-                val read = channel.readAvailable(temp)
-                if (read <= 0) break
-                data.write(temp, 0, read)
-            }
-            write(id, data.toByteArray())
+            write(id, channel.readAvailable())
         }.channel)
     }
+}
+
+suspend fun ByteReadChannel.readAvailable(): ByteArray {
+    val data = ByteArrayOutputStream()
+    val temp = ByteArray(1024)
+    while (!isClosedForRead) {
+        val read = readAvailable(temp)
+        if (read <= 0) break
+        data.write(temp, 0, read)
+    }
+    return data.toByteArray()
 }
 
 class RedisSessionStorage(val redis: Redis, val prefix: String = "session_", val ttlSeconds: Int = 3600) :

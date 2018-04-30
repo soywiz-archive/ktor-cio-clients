@@ -1,7 +1,6 @@
 package com.soywiz.io.ktor.client.cassandra
 
 import com.soywiz.io.ktor.client.util.*
-import com.soywiz.io.ktor.client.util.Deferred
 import com.soywiz.io.ktor.client.util.sync.*
 import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.*
@@ -294,7 +293,7 @@ class Cassandra private constructor(
         }
     }
 
-    private val readyDeferred = Deferred<Unit>()
+    private val readyDeferred = CompletableDeferred<Unit>()
     val ready = readyDeferred
 
     data class Channel(val id: Int) {
@@ -319,7 +318,7 @@ class Cassandra private constructor(
                 try {
                     when (packet.opcode) {
                         Opcodes.READY -> {
-                            readyDeferred.resolve(Unit)
+                            readyDeferred.complete(Unit)
                         }
                         else -> {
                             TODO("Unsupported root opcode ${packet.opcode}")

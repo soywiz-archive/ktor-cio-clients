@@ -1,7 +1,7 @@
 package com.soywiz.io.ktor.client.util
 
+import kotlinx.coroutines.experimental.*
 import java.util.*
-import java.util.concurrent.*
 import java.util.concurrent.atomic.*
 import kotlin.coroutines.experimental.*
 
@@ -12,16 +12,17 @@ class AsyncQueue {
     val queued get() = synchronized(queue) { queue.size }
 
     suspend operator fun <T> invoke(func: suspend () -> T): T {
-        val deferred = Deferred<T>()
+        val deferred = CompletableDeferred<T>()
 
         synchronized(queue) {
             queue.add {
                 val result = try {
                     func()
                 } catch (e: Throwable) {
-                    return@add deferred.reject(e)
+                    deferred.completeExceptionally(e)
+                    return@add
                 }
-                deferred.resolve(result)
+                deferred.complete(result)
             }
         }
         if (running.compareAndSet(false, true)) {

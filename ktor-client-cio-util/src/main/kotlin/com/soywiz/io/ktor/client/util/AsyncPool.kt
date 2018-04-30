@@ -1,12 +1,13 @@
 package com.soywiz.io.ktor.client.util
 
+import kotlinx.coroutines.experimental.*
 import java.util.*
 import java.util.concurrent.atomic.*
 
 class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index: Int) -> T) {
     var createdItems = AtomicInteger()
     private val freedItem = LinkedList<T>()
-    private val waiters = LinkedList<Deferred<Unit>>()
+    private val waiters = LinkedList<CompletableDeferred<Unit>>()
     val availableFreed: Int get() = synchronized(freedItem) { freedItem.size }
 
     suspend fun <TR> tempAlloc(callback: suspend (T) -> TR): TR {
@@ -37,7 +38,7 @@ class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index
             }
             // If we shouldn't create more items and we don't have more, just await for one to be freed.
             else {
-                val deferred = Deferred<Unit>()
+                val deferred = CompletableDeferred<Unit>()
                 synchronized(waiters) {
                     waiters += deferred
                 }
@@ -51,6 +52,6 @@ class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index
             freedItem.add(item)
         }
         val waiter = synchronized(waiters) { if (waiters.isNotEmpty()) waiters.remove() else null }
-        waiter?.resolve(Unit)
+        waiter?.complete(Unit)
     }
 }
