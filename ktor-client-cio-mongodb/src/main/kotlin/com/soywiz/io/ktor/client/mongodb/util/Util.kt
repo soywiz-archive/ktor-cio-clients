@@ -27,3 +27,16 @@ fun ByteReadPacket.withByteOrder(byteOrder: ByteOrder): ByteReadPacket {
 }
 
 fun ByteArray.asReadPacket(byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN) = ByteReadPacket(this, byteOrder)
+
+fun BytePacketBuilder.writePacketWithIntLength(includeLength: Boolean = true, increment: Int = 0, block: BytePacketBuilder.() -> Unit) {
+    val bytes = buildPacket {
+        this.byteOrder = this@writePacketWithIntLength.byteOrder
+        this.block()
+    }.readBytes()
+    writeInt(bytes.size + increment + (if (includeLength) 4 else 0))
+    writeFully(bytes)
+}
+
+fun ByteReadPacket.readPacket(count: Int = remaining, order: ByteOrder = ByteOrder.BIG_ENDIAN): ByteReadPacket {
+    return readBytes(count).asReadPacket(order)
+}

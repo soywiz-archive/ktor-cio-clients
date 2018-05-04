@@ -1,6 +1,7 @@
 package com.soywiz.io.ktor.client.mongodb.bson
 
 import com.soywiz.io.ktor.client.mongodb.util.*
+import com.soywiz.io.ktor.client.util.*
 import kotlinx.io.core.*
 import java.io.*
 import java.math.*
@@ -199,7 +200,9 @@ object BsonMinKey
 object BsonMaxKey
 typealias BsonDocument = Map<String, Any?>
 
-class BsonFunction(val data: ByteArray)
+class BsonFunction(val data: ByteArray) {
+    constructor(data: String) : this(data.toByteArray(Charsets.UTF_8))
+}
 class BsonBinaryOld(val data: ByteArray)
 class BsonUuidOld(val data: ByteArray)
 class BsonUuid(val data: ByteArray)
@@ -209,6 +212,8 @@ class BsonObjectId(val data: ByteArray) {
     init {
         if (data.size != 12) error("BsonObjectId length must be 12")
     }
+
+    override fun toString(): String = "ObjectId(\"${Hex.encodeLower(data)}\")"
 }
 
 class BsonDbPointerOld(val data: ByteArray) {
