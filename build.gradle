@@ -1,6 +1,6 @@
 buildscript {
-    ext.kotlin_version = '1.2.31'
-    ext.ktor_version = '0.9.2-alpha-5'
+    ext.kotlin_version = '1.2.41'
+    ext.ktor_version = '0.9.2'
     ext.kotlinx_coroutines = '0.22.3'
 
     repositories {
