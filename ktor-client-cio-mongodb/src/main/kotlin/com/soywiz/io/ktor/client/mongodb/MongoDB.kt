@@ -2,6 +2,7 @@ package com.soywiz.io.ktor.client.mongodb
 
 import com.soywiz.io.ktor.client.mongodb.bson.*
 import com.soywiz.io.ktor.client.mongodb.util.*
+import com.soywiz.io.ktor.client.util.*
 import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
@@ -13,7 +14,7 @@ import java.net.*
 fun MongoDB(host: String = "127.0.0.1", port: Int = 27017) {
 }
 
-class MongoPacket(
+data class MongoPacket(
     val opcode: Int,
     val requestId: Int,
     val responseTo: Int,
@@ -22,8 +23,8 @@ class MongoPacket(
 
 private val MONGO_MSG_HEAD_SIZE = 4 * 4
 
-suspend fun ByteReadChannel.readMongoPacket(): MongoPacket {
-    val head = readPacket(MONGO_MSG_HEAD_SIZE).apply { readByteOrder = ByteOrder.LITTLE_ENDIAN }
+suspend fun ByteReadChannel.readRawMongoPacket(): MongoPacket {
+    val head: ByteReadPacket = readPacket(MONGO_MSG_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
     val messageLength = head.readInt()
     val requestId = head.readInt()
     val responseTo = head.readInt()
@@ -32,14 +33,50 @@ suspend fun ByteReadChannel.readMongoPacket(): MongoPacket {
     return MongoPacket(opcode, requestId, responseTo, payload.readBytes())
 }
 
-suspend fun ByteWriteChannel.writeMongoPacket(packet: MongoPacket) {
+interface MongoResponsePacket
+data class MongoReply(
+    val responseFlags: Int,
+    val cursorID: Long,
+    val startingFrom: Int,
+    val documents: List<Map<String, Any?>>
+) : MongoResponsePacket
+
+suspend fun ByteReadChannel.readParsedMongoPacket(): MongoResponsePacket {
+    val packet = readRawMongoPacket()
+    val pp = packet.payload.asReadPacket(ByteOrder.LITTLE_ENDIAN)
+    when (packet.opcode) {
+        MongoOps.OP_REPLY -> {
+            val responseFlags = pp.readInt()
+            val cursorID = pp.readLong()
+            val startingFrom = pp.readInt()
+            val numberReturned = pp.readInt()
+            val documents = (0 until numberReturned).map { Bson.read(pp) }
+            return MongoReply(responseFlags, cursorID, startingFrom, documents)
+        }
+        else -> error("Packet ${packet.opcode}")
+    }
+}
+
+suspend fun ByteWriteChannel.writeRawMongoPacket(packet: MongoPacket) {
     writeByteOrder = ByteOrder.LITTLE_ENDIAN
+    val packetBytes = buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
+        writeInt(MONGO_MSG_HEAD_SIZE + packet.payload.size)
+        writeInt(packet.requestId)
+        writeInt(packet.responseTo)
+        writeInt(packet.opcode)
+        writeFully(packet.payload)
+    }.readBytes()
+    println(packetBytes.hex)
+    writeFully(packetBytes)
+    flush()
+    /*
     writeInt(MONGO_MSG_HEAD_SIZE + packet.payload.size)
     writeInt(packet.requestId)
     writeInt(packet.responseTo)
     writeInt(packet.opcode)
     writeFully(packet.payload)
     flush()
+    */
 }
 
 suspend fun ByteWriteChannel.writeMongoOpQuery(
@@ -52,7 +89,7 @@ suspend fun ByteWriteChannel.writeMongoOpQuery(
     query: Map<String, Any?>,
     returnFieldsSelector: Map<String, Any?>? = null
 ) {
-    writeMongoPacket(
+    writeRawMongoPacket(
         MongoPacket(
             opcode = MongoOps.OP_QUERY,
             requestId = requestId,
@@ -60,7 +97,7 @@ suspend fun ByteWriteChannel.writeMongoOpQuery(
             payload = buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
                 Bson.apply {
                     writeInt(flags)
-                    writeBsonString(fullCollectionName)
+                    writeBsonCString(fullCollectionName)
                     writeInt(numberToSkip)
                     writeInt(numberToReturn)
                     writeBsonDocument(query)
@@ -106,23 +143,27 @@ object MongoSandbox {
             val write = socket.openWriteChannel(autoFlush = true)
             write.writeMongoOpQuery(
                 0, 0, 0, "admin.\$cmd", 0, 1, mapOf(
-                    "isMaster" to 1,
+                    "isMaster" to true,
                     "client" to mapOf(
-                        "application" to mapOf("name" to "ktor-client-cio-mongodb")
-                    ),
-                    "driver" to mapOf(
-                        "name" to "ktor-client-cio-mongodb",
-                        "version" to "0.0.1"
-                    ),
-                    "os" to mapOf(
-                        "type" to "Darwin",
-                        "name" to "Mac OS X",
-                        "architecture" to "x86_64",
-                        "version" to "17.5.0"
+                        "application" to mapOf("name" to "ktor-client-cio-mongodb"),
+                        //"application" to mapOf("name" to "MongoDB Shell"),
+                        "driver" to mapOf(
+                            "name" to "ktor-client-cio-mongodb",
+                            "version" to "0.0.1"
+                            //"name" to "MongoDB Internal Client",
+                            //"version" to "3.6.4"
+                        ),
+                        "os" to mapOf(
+                            "type" to "Darwin",
+                            "name" to "Mac OS X",
+                            "architecture" to "x86_64",
+                            "version" to "17.5.0"
+                        )
                     )
                 )
             )
-            read.readMongoPacket()
+            val response = read.readParsedMongoPacket()
+            println(response)
         }
     }
 }

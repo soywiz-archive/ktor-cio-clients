@@ -18,3 +18,12 @@ inline fun buildPacket(headerSizeHint: Int = 0, byteOrder: ByteOrder = ByteOrder
         throw t
     }
 }
+
+fun ByteReadPacket.withByteOrder(byteOrder: ByteOrder): ByteReadPacket {
+    return buildPacket {
+        this.byteOrder = byteOrder
+        writeFully(readBytes())
+    }
+}
+
+fun ByteArray.asReadPacket(byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN) = ByteReadPacket(this, byteOrder)
