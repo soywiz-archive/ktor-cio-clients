@@ -31,16 +31,22 @@ class BsonTest {
             Bson.build(mapOf("BSON" to listOf("awesome", 5.05, 1986))).toEscapedString()
         )
     }
+
+    @Test
+    fun testDecode() {
+        assertTestEncodeDecode(mapOf("hello" to "world"))
+        assertTestEncodeDecode(mapOf("BSON" to listOf("awesome", 5.05, 1986)))
+    }
+
+    private fun assertTestEncodeDecode(doc: Map<String, Any?>) {
+        assertEquals(doc, Bson.read(Bson.build(doc)))
+    }
 }
 
 fun ByteArray.toEscapedString(): String {
     var out = ""
     for (c in this) {
-        if (c.toChar().isLetterOrDigit()) {
-            out += c.toChar()
-        } else {
-            out += "\\x%02x".format(c.toInt())
-        }
+        out += (if (c.toChar().isLetterOrDigit()) c.toChar() else "\\x%02x".format(c.toInt()))
     }
     return out
 }
