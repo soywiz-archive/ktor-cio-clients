@@ -53,19 +53,19 @@ suspend fun MongoDB.insert(
  * Returns the result of the function or throws a [MongoDBException] on error.
  */
 suspend fun MongoDB.eval(db: String, function: String, vararg args: Any?): Any? {
-    val doc = runCommand(db) {
+    return runCommand(db) {
         putNotNull("eval", BsonJavascriptCode(function))
         putNotNull("args", args.toList())
-    }.documents.first()
-    val errmsg = doc["errmsg"]?.toString()
-    if (errmsg != null) throw MongoDBException(errmsg)
-    return doc["retval"]
+    }.checkErrors().firstDocument["retval"]
 }
 
+/**
+ * https://docs.mongodb.com/v3.4/reference/command/find/
+ */
 suspend fun MongoDB.find(
     db: String,
     collection: String,
-    filter: Map<String, Any?>? = null,
+    filter: (MongoDBQueryBuilder.() -> Map<String, Any?>)? = null,
     sort: Map<String, Any?>? = null,
     projection: Map<String, Any?>? = null,
     hint: Any? = null,
@@ -91,7 +91,7 @@ suspend fun MongoDB.find(
 ): MongoDB.Reply {
     val result = runCommand(db) {
         putNotNull("find", collection)
-        putNotNull("filter", filter)
+        if (filter != null) putNotNull("filter", filter(MongoDBQueryBuilder))
         putNotNull("sort", sort)
         putNotNull("projection", projection)
         putNotNull("hint", hint)
@@ -116,4 +116,41 @@ suspend fun MongoDB.find(
         putNotNull("collation", collation)
     }
     return result
+}
+
+data class MongoUpdate(
+    val u: Map<String, Any?>,
+    val upsert: Boolean? = null,
+    val multi: Boolean? = null,
+    val collation: Map<String, Any?>? = null,
+    val q: MongoDBQueryBuilder.() -> Map<String, Any?>
+)
+
+/**
+ * https://docs.mongodb.com/v3.4/reference/command/update/
+ * https://docs.mongodb.com/manual/reference/operator/update-field/
+ */
+suspend fun MongoDB.update(
+    db: String,
+    collection: String,
+    vararg updates: MongoUpdate,
+    ordered: Boolean? = null,
+    writeConcern: Map<String, Any?>? = null,
+    bypassDocumentValidation: Boolean? = null
+): Map<String, Any?> {
+    //{ok=1, nModified=26, n=26}
+
+    val result = runCommand(db) {
+        putNotNull("update", collection)
+        putNotNull("updates", updates.map { update ->
+            mongoMap {
+                putNotNull("q", update.q(MongoDBQueryBuilder))
+                putNotNull("u", update.u)
+                putNotNull("upsert", update.upsert)
+                putNotNull("multi", update.multi)
+                putNotNull("collation", update.collation)
+            }
+        })
+    }.checkErrors()
+    return result.firstDocument
 }

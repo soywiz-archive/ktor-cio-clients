@@ -39,11 +39,17 @@ class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
         val cursorID: Long,
         val startingFrom: Int,
         val documents: List<Map<String, Any?>>
-    )
+    ) {
+        val firstDocument get() = documents.first()
+        fun checkErrors() = this.apply {
+            val errmsg = firstDocument["errmsg"]?.toString()
+            if (errmsg != null) throw MongoDBException(errmsg)
+        }
+    }
 
     private val MONGO_MSG_HEAD_SIZE = 4 * 4
 
-    suspend fun _readRawMongoPacket(): Packet {
+    private suspend fun _readRawMongoPacket(): Packet {
         val head: ByteReadPacket = read.readPacket(MONGO_MSG_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
         val messageLength = head.readInt()
         val requestId = head.readInt()
@@ -64,7 +70,7 @@ class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
         }
     }
 
-    suspend fun _readParsedMongoPacket(): Reply {
+    private suspend fun _readParsedMongoPacket(): Reply {
         val packet = _readRawMongoPacket()
         val pp = packet.payload.asReadPacket(ByteOrder.LITTLE_ENDIAN)
         when (packet.opcode) {
