@@ -13,7 +13,7 @@ import java.net.*
 import java.util.concurrent.*
 
 // https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
-suspend fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
+fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
     return MongoDB {
         val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
         MongoDB.Pipes(
@@ -22,7 +22,7 @@ suspend fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
             close = Closeable { socket.close() }
             )
     }.apply {
-        readJob = readJob()
+        start()
     }
 }
 
@@ -94,6 +94,12 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
                     deferred?.complete(response)
                 }
             }
+        }
+    }
+
+    fun start() {
+        launch {
+            readJob = readJob()
         }
     }
 
