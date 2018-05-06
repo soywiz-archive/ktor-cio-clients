@@ -187,3 +187,101 @@ suspend fun MongoDBCollection.delete(
     }.checkErrors()
     return result.firstDocument
 }
+
+/**
+ * https://docs.mongodb.com/manual/reference/command/createIndexes/
+ */
+class MongoDBIndex(
+    val name: String,
+    vararg val keys: Pair<String, Int>,
+    val unique: Boolean? = null,
+    val background: Boolean? = null,
+    val partialFilterExpression: BsonDocument? = null,
+    val sparse: Boolean? = null,
+    val expireAfterSeconds: Int? = null,
+    val storageEngine: BsonDocument? = null,
+    val weights: BsonDocument? = null,
+    val default_language: String? = null,
+    val language_override: String? = null,
+    val textIndexVersion: Int? = null,
+    val _2dsphereIndexVersion: Int? = null,
+    val bits: Int? = null,
+    val min: Number? = null,
+    val max: Number? = null,
+    val bucketSize: Number? = null,
+    val collation: BsonDocument? = null
+)
+
+/**
+ * https://docs.mongodb.com/manual/reference/command/createIndexes/
+ */
+suspend fun MongoDBCollection.createIndexes(
+    vararg indexes: MongoDBIndex,
+    writeConcern: BsonDocument? = null
+): BsonDocument {
+    val result = db.runCommand {
+        putNotNull("createIndexes", collection)
+        putNotNull("indexes", indexes.map { index ->
+            mongoMap {
+                putNotNull("key", mongoMap {
+                    for (key in index.keys) {
+                        putNotNull(key.first, key.second)
+                    }
+                })
+                putNotNull("name", index.name)
+                putNotNull("unique", index.unique)
+                putNotNull("background", index.background)
+                putNotNull("partialFilterExpression", index.partialFilterExpression)
+                putNotNull("sparse", index.sparse)
+                putNotNull("expireAfterSeconds", index.expireAfterSeconds)
+                putNotNull("storageEngine", index.storageEngine)
+                putNotNull("weights", index.weights)
+                putNotNull("default_language", index.default_language)
+                putNotNull("language_override", index.language_override)
+                putNotNull("textIndexVersion", index.textIndexVersion)
+                putNotNull("2dsphereIndexVersion", index._2dsphereIndexVersion)
+                putNotNull("bits", index.bits)
+                putNotNull("min", index.min)
+                putNotNull("max", index.max)
+                putNotNull("bucketSize", index.bucketSize)
+                putNotNull("collation", index.collation)
+            }
+        })
+        putNotNull("writeConcern", writeConcern)
+    }.checkErrors()
+    return result.firstDocument
+}
+
+suspend fun MongoDBCollection.createIndex(
+    name: String,
+    vararg keys: Pair<String, Int>,
+    unique: Boolean? = null,
+    background: Boolean? = null,
+    partialFilterExpression: BsonDocument? = null,
+    sparse: Boolean? = null,
+    expireAfterSeconds: Int? = null,
+    storageEngine: BsonDocument? = null,
+    weights: BsonDocument? = null,
+    default_language: String? = null,
+    language_override: String? = null,
+    textIndexVersion: Int? = null,
+    _2dsphereIndexVersion: Int? = null,
+    bits: Int? = null,
+    min: Number? = null,
+    max: Number? = null,
+    bucketSize: Number? = null,
+    collation: BsonDocument? = null,
+    writeConcern: BsonDocument? = null
+): BsonDocument {
+    return createIndexes(
+        MongoDBIndex(
+            name, *keys,
+            unique = unique, background = background, partialFilterExpression = partialFilterExpression,
+            sparse = sparse, expireAfterSeconds = expireAfterSeconds, storageEngine = storageEngine,
+            weights = weights, default_language = default_language, language_override = language_override,
+            textIndexVersion = textIndexVersion, _2dsphereIndexVersion = _2dsphereIndexVersion, bits = bits,
+            min = min, max = max, bucketSize = bucketSize, collation = collation
+        ),
+        writeConcern = writeConcern
+    )
+}

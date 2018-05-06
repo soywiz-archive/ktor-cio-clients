@@ -68,6 +68,8 @@ object Bson {
             is BsonDecimal128 -> writeBsonElementHead(0x13, name).writeBsonDecimal128(obj)
             is BsonMinKey -> writeBsonElementHead(0x7F, name)
             is BsonMaxKey -> writeBsonElementHead(0xFF, name)
+            // Number (Double)
+            is Number -> writeBsonElementHead(0x01, name).writeDouble(obj.toDouble())
         }
     }
 

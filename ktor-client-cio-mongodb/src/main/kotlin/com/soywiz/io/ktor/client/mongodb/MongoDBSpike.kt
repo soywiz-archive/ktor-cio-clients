@@ -11,6 +11,8 @@ object MongoDBSpike {
             val helloCollection = simpleDb["hello"]
             //println(mongo.isMaster())
             //println(mongo.listIndexes("simple", "hello"))
+            println(helloCollection.listIndexes())
+            println(helloCollection.createIndex("a_index", "a" to +1))
             println(helloCollection.insert(mapOf("a" to "b")))
             println(helloCollection.insert(mapOf("a" to "c")))
             println(simpleDb.eval("function() { return {a: 10}; }"))
