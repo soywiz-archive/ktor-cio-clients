@@ -30,12 +30,15 @@ suspend fun MongoDB.listIndexes(db: String, index: String): MongoDB.Reply {
     }
 }
 
+/**
+ * https://docs.mongodb.com/v3.4/reference/command/insert/
+ */
 suspend fun MongoDB.insert(
     db: String,
     collection: String,
-    vararg documents: Map<String, Any?>,
+    vararg documents: BsonDocument,
     ordered: Boolean? = null,
-    writeConcern: Map<String, Any?>? = null,
+    writeConcern: BsonDocument? = null,
     bypassDocumentValidation: Boolean? = null
 ): MongoDB.Reply {
     val result = runCommand(db) {
@@ -65,9 +68,8 @@ suspend fun MongoDB.eval(db: String, function: String, vararg args: Any?): Any? 
 suspend fun MongoDB.find(
     db: String,
     collection: String,
-    filter: (MongoDBQueryBuilder.() -> Map<String, Any?>)? = null,
-    sort: Map<String, Any?>? = null,
-    projection: Map<String, Any?>? = null,
+    sort: BsonDocument? = null,
+    projection: BsonDocument? = null,
     hint: Any? = null,
     skip: Int? = null,
     limit: Int? = null,
@@ -76,9 +78,9 @@ suspend fun MongoDB.find(
     comment: String? = null,
     maxScan: Int? = null,
     maxTimeMs: Int? = null,
-    readConcern: Map<String, Any?>? = null,
-    max: Map<String, Any?>? = null,
-    min: Map<String, Any?>? = null,
+    readConcern: BsonDocument? = null,
+    max: BsonDocument? = null,
+    min: BsonDocument? = null,
     returnKey: Boolean? = null,
     showRecordId: Boolean? = null,
     snapshot: Boolean? = null,
@@ -87,7 +89,8 @@ suspend fun MongoDB.find(
     noCursorTimeout: Boolean? = null,
     awaitData: Boolean? = null,
     allowPartialResults: Boolean? = null,
-    collation: Map<String, Any?>? = null
+    collation: BsonDocument? = null,
+    filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null
 ): MongoDB.Reply {
     val result = runCommand(db) {
         putNotNull("find", collection)
@@ -119,11 +122,11 @@ suspend fun MongoDB.find(
 }
 
 data class MongoUpdate(
-    val u: Map<String, Any?>,
+    val u: BsonDocument,
     val upsert: Boolean? = null,
     val multi: Boolean? = null,
-    val collation: Map<String, Any?>? = null,
-    val q: MongoDBQueryBuilder.() -> Map<String, Any?>
+    val collation: BsonDocument? = null,
+    val q: MongoDBQueryBuilder.() -> BsonDocument
 )
 
 /**
@@ -135,9 +138,9 @@ suspend fun MongoDB.update(
     collection: String,
     vararg updates: MongoUpdate,
     ordered: Boolean? = null,
-    writeConcern: Map<String, Any?>? = null,
+    writeConcern: BsonDocument? = null,
     bypassDocumentValidation: Boolean? = null
-): Map<String, Any?> {
+): BsonDocument {
     //{ok=1, nModified=26, n=26}
 
     val result = runCommand(db) {
@@ -151,6 +154,33 @@ suspend fun MongoDB.update(
                 putNotNull("collation", update.collation)
             }
         })
+    }.checkErrors()
+    return result.firstDocument
+}
+
+/**
+ * https://docs.mongodb.com/v3.4/reference/command/delete/
+ */
+suspend fun MongoDB.delete(
+    db: String,
+    collection: String,
+    limit: Boolean,
+    collation: BsonDocument? = null,
+    ordered: Boolean? = null,
+    writeConcern: BsonDocument? = null,
+    q: (MongoDBQueryBuilder.() -> BsonDocument)
+): BsonDocument {
+    val result = runCommand(db) {
+        putNotNull("delete", collection)
+        putNotNull("deletes", listOf(
+            mongoMap {
+                putNotNull("q", q.invoke(MongoDBQueryBuilder))
+                if (limit != null) putNotNull("limit", if (limit) 1 else 0)
+                putNotNull("collation", collation)
+            }
+        ))
+        putNotNull("ordered", ordered)
+        putNotNull("writeConcern", writeConcern)
     }.checkErrors()
     return result.firstDocument
 }
