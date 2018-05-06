@@ -20,7 +20,7 @@ fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
             read = socket.openReadChannel(),
             write = socket.openWriteChannel(autoFlush = true),
             close = Closeable { socket.close() }
-            )
+        )
     }.apply {
         start()
     }

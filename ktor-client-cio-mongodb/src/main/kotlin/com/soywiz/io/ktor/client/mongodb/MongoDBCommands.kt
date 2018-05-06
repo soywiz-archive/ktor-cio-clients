@@ -2,6 +2,20 @@ package com.soywiz.io.ktor.client.mongodb
 
 import com.soywiz.io.ktor.client.mongodb.bson.*
 
+class MongoDBDatabase(val mongo: MongoDB, val db: String)
+
+class MongoDBCollection(val db: MongoDBDatabase, val collection: String) {
+    val dbName get() = db.db
+    val mongo get() = db.mongo
+}
+
+operator fun MongoDB.get(db: String): MongoDBDatabase = MongoDBDatabase(this, db)
+operator fun MongoDBDatabase.get(collection: String): MongoDBCollection = MongoDBCollection(this, collection)
+
+suspend inline fun MongoDBDatabase.runCommand(
+    numberToSkip: Int = 0, numberToReturn: Int = 1,
+    mapGen: MutableMap<String, Any?>.() -> Unit
+): MongoDB.Reply = mongo.runCommand(db, mongoMap(mapGen), numberToSkip, numberToReturn)
 
 /*
 "client" to mapOf(
@@ -23,25 +37,20 @@ import com.soywiz.io.ktor.client.mongodb.bson.*
 suspend fun MongoDB.isMaster(): MongoDB.Reply = runCommand("admin") { putNotNull("isMaster", true) }
 
 // @TODO: Incomplete
-suspend fun MongoDB.listIndexes(db: String, index: String): MongoDB.Reply {
-    return runCommand(db) {
-        putNotNull("listIndexes", index)
-        putNotNull("cursor", mapOf<String, Any?>())
-    }
+suspend fun MongoDBCollection.listIndexes(): MongoDB.Reply {
+    return db.runCommand { putNotNull("listIndexes", collection) }
 }
 
 /**
  * https://docs.mongodb.com/v3.4/reference/command/insert/
  */
-suspend fun MongoDB.insert(
-    db: String,
-    collection: String,
+suspend fun MongoDBCollection.insert(
     vararg documents: BsonDocument,
     ordered: Boolean? = null,
     writeConcern: BsonDocument? = null,
     bypassDocumentValidation: Boolean? = null
 ): MongoDB.Reply {
-    val result = runCommand(db) {
+    val result = db.runCommand {
         putNotNull("insert", collection)
         putNotNull("documents", documents.toList())
         putNotNull("ordered", ordered)
@@ -55,8 +64,8 @@ suspend fun MongoDB.insert(
  * Example: mongo.eval("admin", "function() { return {a: 10}; }")
  * Returns the result of the function or throws a [MongoDBException] on error.
  */
-suspend fun MongoDB.eval(db: String, function: String, vararg args: Any?): Any? {
-    return runCommand(db) {
+suspend fun MongoDBDatabase.eval(function: String, vararg args: Any?): Any? {
+    return runCommand {
         putNotNull("eval", BsonJavascriptCode(function))
         putNotNull("args", args.toList())
     }.checkErrors().firstDocument["retval"]
@@ -65,9 +74,7 @@ suspend fun MongoDB.eval(db: String, function: String, vararg args: Any?): Any? 
 /**
  * https://docs.mongodb.com/v3.4/reference/command/find/
  */
-suspend fun MongoDB.find(
-    db: String,
-    collection: String,
+suspend fun MongoDBCollection.find(
     sort: BsonDocument? = null,
     projection: BsonDocument? = null,
     hint: Any? = null,
@@ -92,7 +99,7 @@ suspend fun MongoDB.find(
     collation: BsonDocument? = null,
     filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null
 ): MongoDB.Reply {
-    val result = runCommand(db) {
+    val result = db.runCommand {
         putNotNull("find", collection)
         if (filter != null) putNotNull("filter", filter(MongoDBQueryBuilder))
         putNotNull("sort", sort)
@@ -133,9 +140,7 @@ data class MongoUpdate(
  * https://docs.mongodb.com/v3.4/reference/command/update/
  * https://docs.mongodb.com/manual/reference/operator/update-field/
  */
-suspend fun MongoDB.update(
-    db: String,
-    collection: String,
+suspend fun MongoDBCollection.update(
     vararg updates: MongoUpdate,
     ordered: Boolean? = null,
     writeConcern: BsonDocument? = null,
@@ -143,7 +148,7 @@ suspend fun MongoDB.update(
 ): BsonDocument {
     //{ok=1, nModified=26, n=26}
 
-    val result = runCommand(db) {
+    val result = db.runCommand {
         putNotNull("update", collection)
         putNotNull("updates", updates.map { update ->
             mongoMap {
@@ -161,16 +166,14 @@ suspend fun MongoDB.update(
 /**
  * https://docs.mongodb.com/v3.4/reference/command/delete/
  */
-suspend fun MongoDB.delete(
-    db: String,
-    collection: String,
+suspend fun MongoDBCollection.delete(
     limit: Boolean,
     collation: BsonDocument? = null,
     ordered: Boolean? = null,
     writeConcern: BsonDocument? = null,
     q: (MongoDBQueryBuilder.() -> BsonDocument)
 ): BsonDocument {
-    val result = runCommand(db) {
+    val result = db.runCommand {
         putNotNull("delete", collection)
         putNotNull("deletes", listOf(
             mongoMap {
