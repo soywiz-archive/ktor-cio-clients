@@ -56,7 +56,7 @@ suspend fun MongoDBCollection.insert(
         putNotNull("ordered", ordered)
         putNotNull("writeConcern", writeConcern)
         putNotNull("bypassDocumentValidation", bypassDocumentValidation)
-    }
+    }.checkErrors()
     return result
 }
 
