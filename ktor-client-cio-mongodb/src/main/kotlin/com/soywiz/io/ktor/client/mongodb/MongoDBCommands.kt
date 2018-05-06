@@ -175,7 +175,7 @@ suspend fun MongoDB.delete(
         putNotNull("deletes", listOf(
             mongoMap {
                 putNotNull("q", q.invoke(MongoDBQueryBuilder))
-                if (limit != null) putNotNull("limit", if (limit) 1 else 0)
+                putNotNull("limit", if (limit) 1 else 0)
                 putNotNull("collation", collation)
             }
         ))
