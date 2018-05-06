@@ -22,7 +22,7 @@ allprojects {
     apply plugin: 'com.jfrog.bintray'
 
     group 'com.soywiz.io.ktor'
-    version '0.0.4'
+    version '0.0.5'
 
     sourceCompatibility = 1.8
     compileKotlin.kotlinOptions.jvmTarget = "1.8"
@@ -90,6 +90,9 @@ allprojects {
                 licenses = ['Apache-2.0']
                 vcsUrl = 'https://github.com/soywiz/ktor-cio-clients.git'
             }
+        }
+
+        task deploy(dependsOn: bintrayUpload) {
         }
     }
 }
