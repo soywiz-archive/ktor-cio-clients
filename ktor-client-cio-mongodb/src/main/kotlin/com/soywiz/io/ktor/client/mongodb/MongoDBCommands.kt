@@ -98,7 +98,7 @@ suspend fun MongoDBCollection.find(
     allowPartialResults: Boolean? = null,
     collation: BsonDocument? = null,
     filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null
-): MongoDB.Reply {
+): List<BsonDocument> {
     val result = db.runCommand {
         putNotNull("find", collection)
         if (filter != null) putNotNull("filter", filter(MongoDBQueryBuilder))
@@ -124,8 +124,8 @@ suspend fun MongoDBCollection.find(
         putNotNull("awaitData", awaitData)
         putNotNull("allowPartialResults", allowPartialResults)
         putNotNull("collation", collation)
-    }
-    return result
+    }.checkErrors()
+    return (result.firstDocument["cursor"] as BsonDocument)["firstBatch"] as List<BsonDocument>
 }
 
 data class MongoUpdate(
