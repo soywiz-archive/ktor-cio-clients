@@ -8,20 +8,46 @@ import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.*
 import kotlinx.io.core.ByteOrder
+import java.io.*
 import java.net.*
+import java.util.concurrent.*
 
 // https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
 suspend fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
-    val socket = aSocket().tcp().connect(InetSocketAddress("127.0.0.1", 27017))
-    val read = socket.openReadChannel()
-    val write = socket.openWriteChannel(autoFlush = true)
-    return MongoDB(read, write).apply {
+    return MongoDB {
+        val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
+        MongoDB.Pipes(
+            read = socket.openReadChannel(),
+            write = socket.openWriteChannel(autoFlush = true),
+            close = Closeable { socket.close() }
+            )
+    }.apply {
         readJob = readJob()
     }
 }
 
-class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
-    var lastRequestId: Int = 0
+class MongoDB(val pipesFactory: suspend () -> Pipes) {
+    companion object {
+        private val MONGO_MSG_HEAD_SIZE = 4 * 4
+    }
+
+    private var lastRequestId: Int = 0
+    private var _pipes: Pipes? = null
+    private val pipesQueue = AsyncQueue()
+    private val writeQueue = AsyncQueue()
+
+    suspend fun pipes(): Pipes = pipesQueue {
+        if (_pipes == null) {
+            _pipes = pipesFactory()
+        }
+        _pipes!!
+    }
+
+    class Pipes(
+        val read: ByteReadChannel,
+        val write: ByteWriteChannel,
+        val close: Closeable
+    )
 
     class Packet(
         val opcode: Int,
@@ -47,9 +73,8 @@ class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
         }
     }
 
-    private val MONGO_MSG_HEAD_SIZE = 4 * 4
-
     private suspend fun _readRawMongoPacket(): Packet {
+        val read = pipes().read
         val head: ByteReadPacket = read.readPacket(MONGO_MSG_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
         val messageLength = head.readInt()
         val requestId = head.readInt()
@@ -63,9 +88,11 @@ class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
     suspend fun readJob(): Job {
         return launch {
             while (true) {
-                val response = _readParsedMongoPacket()
-                val deferred = deferreds[response.packet.responseTo]
-                deferred?.complete(response)
+                checkErrorAndReconnect {
+                    val response = _readParsedMongoPacket()
+                    val deferred = deferreds[response.packet.responseTo]
+                    deferred?.complete(response)
+                }
             }
         }
     }
@@ -109,10 +136,19 @@ class MongoDB(val read: ByteReadChannel, val write: ByteWriteChannel) {
         }
     }
 
-    private val queue = AsyncQueue()
+    private suspend inline fun checkErrorAndReconnect(callback: () -> Unit) {
+        try {
+            callback()
+        } catch (e: Throwable) {
+            e.printStackTrace()
+            _pipes = null
+            delay(5, TimeUnit.SECONDS)
+        }
+    }
 
-    suspend fun writeRawMongoPacket(packet: Packet) {
-        queue {
+    suspend fun writeRawMongoPacket(packet: Packet) = writeQueue {
+        checkErrorAndReconnect {
+            val write = pipes().write
             write.writeByteOrder = ByteOrder.LITTLE_ENDIAN
             val packetBytes = buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
                 writeInt(MONGO_MSG_HEAD_SIZE + packet.payload.size)
