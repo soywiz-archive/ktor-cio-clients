@@ -69,7 +69,17 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         val firstDocument get() = documents.first()
         fun checkErrors() = this.apply {
             val errmsg = firstDocument["errmsg"]?.toString()
-            if (errmsg != null) throw MongoDBException(errmsg)
+            val errcode = firstDocument["code"]?.toString()
+            if (errmsg != null) throw MongoDBException(errmsg, errcode?.toIntOrNull() ?: -1)
+            val writeErrors = firstDocument["writeErrors"]
+            if (writeErrors != null) Dynamic {
+                throw MongoDBWriteException(writeErrors.list.map {
+                    MongoDBException(
+                        writeErrors["errmsg"].toString(),
+                        writeErrors["code"].toIntDefault(-1)
+                    )
+                })
+            }
         }
     }
 
@@ -262,7 +272,10 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
     ): Reply = runCommand(db, mongoMap(mapGen), numberToSkip, numberToReturn)
 }
 
-class MongoDBException(message: String) : RuntimeException(message)
+class MongoDBWriteException(val exceptions: List<MongoDBException>) :
+    RuntimeException(exceptions.map { it.message }.joinToString(", "))
+
+class MongoDBException(message: String, val code: Int) : RuntimeException(message)
 
 fun <K, V> mapOfNotNull(vararg pairs: Pair<K, V>): Map<K, V> {
     val out = LinkedHashMap<K, V>()

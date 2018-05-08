@@ -68,7 +68,7 @@ object Bson {
             is BsonDecimal128 -> writeBsonElementHead(0x13, name).writeBsonDecimal128(obj)
             is BsonMinKey -> writeBsonElementHead(0x7F, name)
             is BsonMaxKey -> writeBsonElementHead(0xFF, name)
-            // Number (Double)
+        // Number (Double)
             is Number -> writeBsonElementHead(0x01, name).writeDouble(obj.toDouble())
         }
     }
@@ -120,7 +120,7 @@ object Bson {
             val type = readByte().toInt() and 0xFF
             if (type == 0) break@elements
             val name = readBsonCString()
-            out[name] =  when (type) {
+            out[name] = when (type) {
                 0x01 -> readDouble()
                 0x02 -> readBsonString()
                 0x03 -> readBsonDocument()
@@ -202,15 +202,22 @@ object BsonMinKey
 object BsonMaxKey
 typealias BsonDocument = Map<String, Any?>
 
-class BsonFunction(val data: ByteArray) {
+open class BsonBinaryBase(val data: ByteArray) {
+    override fun hashCode(): Int = data.contentHashCode()
+    override fun equals(other: Any?): Boolean =
+        if (other is BsonBinaryBase) this.data.contentEquals(other.data) else false
+}
+
+class BsonFunction(data: ByteArray) : BsonBinaryBase(data) {
     constructor(data: String) : this(data.toByteArray(Charsets.UTF_8))
 }
-class BsonBinaryOld(val data: ByteArray)
-class BsonUuidOld(val data: ByteArray)
-class BsonUuid(val data: ByteArray)
-class BsonMd5(val data: ByteArray)
-class BsonUserDefined(val data: ByteArray)
-class BsonObjectId(val data: ByteArray) {
+
+class BsonBinaryOld(data: ByteArray) : BsonBinaryBase(data)
+class BsonUuidOld(data: ByteArray) : BsonBinaryBase(data)
+class BsonUuid(data: ByteArray) : BsonBinaryBase(data)
+class BsonMd5(data: ByteArray) : BsonBinaryBase(data)
+class BsonUserDefined(data: ByteArray) : BsonBinaryBase(data)
+class BsonObjectId(data: ByteArray) : BsonBinaryBase(data) {
     init {
         if (data.size != 12) error("BsonObjectId length must be 12")
     }
@@ -218,7 +225,7 @@ class BsonObjectId(val data: ByteArray) {
     override fun toString(): String = "ObjectId(\"${Hex.encodeLower(data)}\")"
 }
 
-class BsonDbPointerOld(val data: ByteArray) {
+class BsonDbPointerOld(data: ByteArray) : BsonBinaryBase(data) {
     init {
         if (data.size != 12) error("BsonDbPointerOld length must be 12")
     }
