@@ -1,6 +1,7 @@
 package com.soywiz.io.ktor.client.mongodb
 
 import com.soywiz.io.ktor.client.mongodb.bson.*
+import com.soywiz.io.ktor.client.util.*
 
 class MongoDBDatabase(val mongo: MongoDB, val db: String)
 
@@ -70,6 +71,54 @@ suspend fun MongoDBDatabase.eval(function: String, vararg args: Any?): Any? {
         putNotNull("args", args.toList())
     }.checkErrors().firstDocument["retval"]
 }
+
+data class MongoDBQueryConfig(
+    val collection: MongoDBCollection,
+    val sort: BsonDocument? = null,
+    val filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null,
+    val projection: BsonDocument? = null,
+    val skip: Int? = null,
+    val limit: Int? = null
+)
+
+data class MongoDBQuery(val config: MongoDBQueryConfig) : SuspendingSequence<BsonDocument> {
+    fun skip(count: Int) = copy(config = config.copy(skip = count))
+    fun limit(count: Int) = copy(config = config.copy(limit = count))
+    fun filter(newFilter: (MongoDBQueryBuilder.() -> BsonDocument)) = copy(config = config.copy(filter = {
+        if (config.filter != null) ((config.filter)() and newFilter()) else newFilter()
+    }))
+
+    fun include(vararg fieldsToInclude: String) =
+        copy(config = config.copy(projection = (config.projection ?: mapOf()) + fieldsToInclude.map { it to 1 }.toMap()))
+
+    fun exclude(vararg fieldsToExclude: String) =
+        copy(config = config.copy(projection = (config.projection ?: mapOf()) + fieldsToExclude.map { it to 0 }.toMap()))
+
+    fun sortedBy(vararg pairs: Pair<String, Int>) = copy(config = config.copy(sort = pairs.toList().toMap()))
+
+    override suspend fun iterator(): SuspendingIterator<BsonDocument> {
+        return config.collection.find(sort = config.sort, projection = config.projection, skip = config.skip, limit = config.limit, filter = config.filter)
+            .toSuspendingSequence().iterator()
+    }
+
+    suspend fun firstOrNull(): BsonDocument? = limit(1).toList().firstOrNull()
+}
+
+enum class MongoDBDeleteKind {
+    ONE, ALL
+}
+
+suspend fun MongoDBQuery.delete(kind: MongoDBDeleteKind): BsonDocument =
+    config.collection.delete(limit = kind == MongoDBDeleteKind.ONE, q = { config.filter?.invoke(this) ?: mapOf() })
+
+suspend fun MongoDBQuery.deleteOne() = delete(kind = MongoDBDeleteKind.ONE)
+suspend fun MongoDBQuery.deleteAll() = delete(kind = MongoDBDeleteKind.ALL)
+
+suspend fun MongoDBCollection.query(filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null): MongoDBQuery =
+    MongoDBQuery(MongoDBQueryConfig(this, filter = filter))
+
+suspend fun MongoDBCollection.select(filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null): MongoDBQuery =
+    MongoDBQuery(MongoDBQueryConfig(this, filter = filter))
 
 /**
  * https://docs.mongodb.com/v3.4/reference/command/find/

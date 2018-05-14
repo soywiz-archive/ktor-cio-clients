@@ -1,6 +1,8 @@
 package com.soywiz.io.ktor.client.mongodb
 
 import com.soywiz.io.ktor.client.mongodb.bson.*
+import com.soywiz.io.ktor.client.mongodb.bson.Bson.writeBsonCString
+import com.soywiz.io.ktor.client.mongodb.bson.Bson.writeBsonDocument
 import com.soywiz.io.ktor.client.mongodb.util.*
 import com.soywiz.io.ktor.client.util.*
 import io.ktor.network.sockets.*
@@ -14,9 +16,9 @@ import java.util.concurrent.*
 
 // https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
 fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
-    return MongoDB {
+    return MongoDBClient {
         val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
-        MongoDB.Pipes(
+        MongoDBClient.Pipes(
             read = socket.openReadChannel(),
             write = socket.openWriteChannel(autoFlush = true),
             close = Closeable { socket.close() }
@@ -26,7 +28,56 @@ fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
     }
 }
 
-class MongoDB(val pipesFactory: suspend () -> Pipes) {
+interface MongoDB {
+    class Packet(
+        val opcode: Int,
+        val requestId: Int,
+        val responseTo: Int,
+        val payload: ByteArray
+    ) {
+        override fun toString(): String =
+            "MongoPacket(opcode=$opcode, requestId=$requestId, responseTo=$responseTo, payload=SIZE(${payload.size}))"
+    }
+
+
+    data class Reply(
+        val packet: Packet,
+        val responseFlags: Int,
+        val cursorID: Long,
+        val startingFrom: Int,
+        val documents: List<BsonDocument>
+    ) {
+        val firstDocument get() = documents.first()
+        fun checkErrors() = this.apply {
+            val errmsg = firstDocument["errmsg"]?.toString()
+            val errcode = firstDocument["code"]?.toString()
+            if (errmsg != null) throw MongoDBException(errmsg, errcode?.toIntOrNull() ?: -1)
+            val writeErrors = firstDocument["writeErrors"]
+            if (writeErrors != null) Dynamic {
+                throw MongoDBWriteException(writeErrors.list.map {
+                    MongoDBException(
+                        writeErrors["errmsg"].toString(),
+                        writeErrors["code"].toIntDefault(-1)
+                    )
+                })
+            }
+        }
+    }
+
+    suspend fun runCommand(
+        db: String, payload: BsonDocument,
+        numberToSkip: Int = 0, numberToReturn: Int = 1
+    ): Reply
+}
+
+
+suspend inline fun MongoDB.runCommand(
+    db: String,
+    numberToSkip: Int = 0, numberToReturn: Int = 1,
+    mapGen: MutableMap<String, Any?>.() -> Unit
+): MongoDB.Reply = runCommand(db, mongoMap(mapGen), numberToSkip, numberToReturn)
+
+class MongoDBClient(val pipesFactory: suspend () -> Pipes) : MongoDB {
     companion object {
         private val MONGO_MSG_HEAD_SIZE = 4 * 4
     }
@@ -49,41 +100,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         val close: Closeable
     )
 
-    class Packet(
-        val opcode: Int,
-        val requestId: Int,
-        val responseTo: Int,
-        val payload: ByteArray
-    ) {
-        override fun toString(): String =
-            "MongoPacket(opcode=$opcode, requestId=$requestId, responseTo=$responseTo, payload=SIZE(${payload.size}))"
-    }
-
-    data class Reply(
-        val packet: Packet,
-        val responseFlags: Int,
-        val cursorID: Long,
-        val startingFrom: Int,
-        val documents: List<Map<String, Any?>>
-    ) {
-        val firstDocument get() = documents.first()
-        fun checkErrors() = this.apply {
-            val errmsg = firstDocument["errmsg"]?.toString()
-            val errcode = firstDocument["code"]?.toString()
-            if (errmsg != null) throw MongoDBException(errmsg, errcode?.toIntOrNull() ?: -1)
-            val writeErrors = firstDocument["writeErrors"]
-            if (writeErrors != null) Dynamic {
-                throw MongoDBWriteException(writeErrors.list.map {
-                    MongoDBException(
-                        writeErrors["errmsg"].toString(),
-                        writeErrors["code"].toIntDefault(-1)
-                    )
-                })
-            }
-        }
-    }
-
-    private suspend fun _readRawMongoPacket(): Packet {
+    private suspend fun _readRawMongoPacket(): MongoDB.Packet {
         val read = pipes().read
         val head: ByteReadPacket = read.readPacket(MONGO_MSG_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
         val messageLength = head.readInt()
@@ -91,7 +108,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         val responseTo = head.readInt()
         val opcode = head.readInt()
         val payload = read.readPacket(messageLength - MONGO_MSG_HEAD_SIZE)
-        return Packet(opcode, requestId, responseTo, payload.readBytes())
+        return MongoDB.Packet(opcode, requestId, responseTo, payload.readBytes())
     }
 
     var readJob: Job? = null
@@ -113,7 +130,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         }
     }
 
-    private suspend fun _readParsedMongoPacket(): Reply {
+    private suspend fun _readParsedMongoPacket(): MongoDB.Reply {
         val packet = _readRawMongoPacket()
         val pp = packet.payload.asReadPacket(ByteOrder.LITTLE_ENDIAN)
         when (packet.opcode) {
@@ -124,7 +141,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
                     val startingFrom = readInt()
                     val numberReturned = readInt()
                     val documents = (0 until numberReturned).map { Bson.read(this@run) }
-                    Reply(packet, responseFlags, cursorID, startingFrom, documents)
+                    MongoDB.Reply(packet, responseFlags, cursorID, startingFrom, documents)
                 }
             }
         //MongoOps.OP_MSG -> {
@@ -162,7 +179,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         }
     }
 
-    suspend fun writeRawMongoPacket(packet: Packet) = writeQueue {
+    suspend fun writeRawMongoPacket(packet: MongoDB.Packet) = writeQueue {
         checkErrorAndReconnect {
             val write = pipes().write
             write.writeByteOrder = ByteOrder.LITTLE_ENDIAN
@@ -179,25 +196,25 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         }
     }
 
-    private val deferreds = LinkedHashMap<Int, CompletableDeferred<Reply>>()
+    private val deferreds = LinkedHashMap<Int, CompletableDeferred<MongoDB.Reply>>()
 
     suspend fun writeMongoOpQuery(
         fullCollectionName: String,
         numberToSkip: Int,
         numberToReturn: Int,
-        query: Map<String, Any?>,
-        returnFieldsSelector: Map<String, Any?>? = null
-    ): Reply {
+        query: BsonDocument,
+        returnFieldsSelector: BsonDocument? = null
+    ): MongoDB.Reply {
         val requestId = lastRequestId++
-        val deferred = CompletableDeferred<Reply>()
+        val deferred = CompletableDeferred<MongoDB.Reply>()
         deferreds[requestId] = deferred
         writeRawMongoPacket(
-            Packet(
+            MongoDB.Packet(
                 opcode = MongoOps.OP_QUERY,
                 requestId = requestId,
                 responseTo = 0,
                 payload = buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
-                    Bson.apply {
+                    apply {
                         writeInt(0) // flags
                         writeBsonCString(fullCollectionName)
                         writeInt(numberToSkip)
@@ -216,7 +233,7 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
     }
 
     //suspend fun ByteWriteChannel.writeMongoOpMsg(
-    //    sections: List<Pair<String, List<Map<String, Any?>>>>
+    //    sections: List<Pair<String, List<BsonDocument>>>
     //) {
     //    val payload = buildPacket {
     //        writeInt(0) // flags
@@ -260,16 +277,11 @@ class MongoDB(val pipesFactory: suspend () -> Pipes) {
         val PARTIAL = (1 shl 7)
     }
 
-    suspend fun runCommand(
-        db: String, payload: Map<String, Any?>,
-        numberToSkip: Int = 0, numberToReturn: Int = 1
-    ): Reply = writeMongoOpQuery("$db.\$cmd", numberToSkip, numberToReturn, payload)
+    override suspend fun runCommand(
+        db: String, payload: BsonDocument,
+        numberToSkip: Int, numberToReturn: Int
+    ): MongoDB.Reply = writeMongoOpQuery("$db.\$cmd", numberToSkip, numberToReturn, payload)
 
-    suspend inline fun runCommand(
-        db: String,
-        numberToSkip: Int = 0, numberToReturn: Int = 1,
-        mapGen: MutableMap<String, Any?>.() -> Unit
-    ): Reply = runCommand(db, mongoMap(mapGen), numberToSkip, numberToReturn)
 }
 
 class MongoDBWriteException(val exceptions: List<MongoDBException>) :
@@ -287,6 +299,6 @@ fun <K, V> MutableMap<K, V>.putNotNull(key: K, value: V) {
     if (value != null) put(key, value)
 }
 
-inline fun mongoMap(callback: MutableMap<String, Any?>.() -> Unit): Map<String, Any?> =
+inline fun mongoMap(callback: MutableMap<String, Any?>.() -> Unit): BsonDocument =
     LinkedHashMap<String, Any?>().apply(callback)
 

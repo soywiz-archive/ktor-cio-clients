@@ -6,7 +6,7 @@ interface SuspendingIterator<out T> {
 }
 
 interface SuspendingSequence<out T> {
-    operator fun iterator(): SuspendingIterator<T>
+    suspend operator fun iterator(): SuspendingIterator<T>
 }
 
 suspend fun <T> SuspendingSequence<T>.first() = this.iterator().next()
@@ -14,6 +14,7 @@ suspend fun <T> SuspendingSequence<T>.firstOrNull(): T? {
     val it = iterator()
     return if (it.hasNext()) it.next() else null
 }
+
 suspend fun <T> SuspendingSequence<T>.toList() = this.iterator().toList()
 suspend fun <T> SuspendingIterator<T>.toList(): List<T> {
     val out = arrayListOf<T>()
@@ -22,7 +23,7 @@ suspend fun <T> SuspendingIterator<T>.toList(): List<T> {
 }
 
 fun <T> List<T>.toSuspendingSequence() = object : SuspendingSequence<T> {
-    override fun iterator(): SuspendingIterator<T> {
+    override suspend fun iterator(): SuspendingIterator<T> {
         val lit = this@toSuspendingSequence.iterator()
         return object : SuspendingIterator<T> {
             override suspend fun hasNext(): Boolean = lit.hasNext()
@@ -33,11 +34,12 @@ fun <T> List<T>.toSuspendingSequence() = object : SuspendingSequence<T> {
 
 suspend fun <T, R> SuspendingSequence<T>.map(transform: (T) -> R): SuspendingSequence<R> {
     return object : SuspendingSequence<R> {
-        override fun iterator(): SuspendingIterator<R> = object : SuspendingIterator<R> {
+        override suspend fun iterator(): SuspendingIterator<R> {
             val iter = this@map.iterator()
-
-            override suspend fun hasNext(): Boolean = iter.hasNext()
-            override suspend fun next(): R = transform(iter.next())
+            return object : SuspendingIterator<R> {
+                override suspend fun hasNext(): Boolean = iter.hasNext()
+                override suspend fun next(): R = transform(iter.next())
+            }
         }
     }
 }
