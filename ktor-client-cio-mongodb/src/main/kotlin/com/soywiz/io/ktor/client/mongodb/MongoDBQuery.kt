@@ -23,14 +23,8 @@ object MongoDBQueryBuilder {
 
     fun String.exists(exists: Boolean = true) = mapOf(this to mapOf("\$exists" to exists))
     fun String.eqType(type: String) = mapOf(this to mapOf("\$type" to type))
+
+    fun all(): BsonDocument = mapOf()
 }
 
 inline fun mongoQuery(generate: MongoDBQueryBuilder.() -> BsonDocument): BsonDocument = generate(MongoDBQueryBuilder)
-
-fun MongoDBQueryBuilder.all(): BsonDocument = mapOf()
-
-/*
-fun test() {
-    mongoQuery { ("test" eq 10) or ("test" eq 20) }
-}
-*/

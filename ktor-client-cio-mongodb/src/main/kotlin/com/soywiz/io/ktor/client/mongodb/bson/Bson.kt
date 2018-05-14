@@ -1,5 +1,6 @@
 package com.soywiz.io.ktor.client.mongodb.bson
 
+import com.soywiz.io.ktor.client.mongodb.*
 import com.soywiz.io.ktor.client.mongodb.util.*
 import com.soywiz.io.ktor.client.util.*
 import kotlinx.io.core.*
@@ -222,6 +223,8 @@ class BsonObjectId(data: ByteArray) : BsonBinaryBase(data) {
         if (data.size != 12) error("BsonObjectId length must be 12")
     }
 
+    constructor(hex: String) : this(Hex.decode(hex))
+    val hex: String get() = Hex.encode(this.data)
     override fun toString(): String = "ObjectId(\"${Hex.encodeLower(data)}\")"
 }
 

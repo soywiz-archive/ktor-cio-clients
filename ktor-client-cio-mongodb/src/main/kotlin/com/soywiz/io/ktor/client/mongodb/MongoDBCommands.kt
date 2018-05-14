@@ -97,8 +97,35 @@ data class MongoDBQuery(val config: MongoDBQueryConfig) : SuspendingSequence<Bso
     fun sortedBy(vararg pairs: Pair<String, Int>) = copy(config = config.copy(sort = pairs.toList().toMap()))
 
     override suspend fun iterator(): SuspendingIterator<BsonDocument> {
-        return config.collection.find(sort = config.sort, projection = config.projection, skip = config.skip, limit = config.limit, filter = config.filter)
-            .toSuspendingSequence().iterator()
+        var current = config.collection.find(sort = config.sort, projection = config.projection, skip = config.skip, limit = config.limit, filter = config.filter)
+
+        return object : SuspendingIterator<BsonDocument> {
+            private val hasMoreInBatch get() = pos < current.batch.size
+            private val hasMoreBatches get() = current.batch.isNotEmpty()
+            var pos = 0
+
+            private suspend fun getMore() {
+                if (hasMoreBatches) {
+                    current = current.getMore()
+                }
+                pos = 0
+            }
+
+            private suspend fun getMoreIfRequired() {
+                if (!hasMoreInBatch) getMore()
+            }
+
+            override suspend fun hasNext(): Boolean {
+                getMoreIfRequired()
+                return hasMoreInBatch
+            }
+
+            override suspend fun next(): BsonDocument {
+                getMoreIfRequired()
+                if (!hasMoreInBatch) throw NoSuchElementException()
+                return current.batch[pos++]
+            }
+        }
     }
 
     suspend fun firstOrNull(): BsonDocument? = limit(1).toList().firstOrNull()
@@ -119,6 +146,10 @@ suspend fun MongoDBCollection.query(filter: (MongoDBQueryBuilder.() -> BsonDocum
 
 suspend fun MongoDBCollection.select(filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null): MongoDBQuery =
     MongoDBQuery(MongoDBQueryConfig(this, filter = filter))
+
+class MongoDBFindResult(val collection: MongoDBCollection, val cursorId: Long, val batch: List<BsonDocument>) : List<BsonDocument> by batch {
+    override fun toString(): String = batch.toString()
+}
 
 /**
  * https://docs.mongodb.com/v3.4/reference/command/find/
@@ -147,7 +178,7 @@ suspend fun MongoDBCollection.find(
     allowPartialResults: Boolean? = null,
     collation: BsonDocument? = null,
     filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null
-): List<BsonDocument> {
+): MongoDBFindResult {
     val result = db.runCommand {
         putNotNull("find", collection)
         if (filter != null) putNotNull("filter", filter(MongoDBQueryBuilder))
@@ -174,7 +205,15 @@ suspend fun MongoDBCollection.find(
         putNotNull("allowPartialResults", allowPartialResults)
         putNotNull("collation", collation)
     }.checkErrors()
-    return (result.firstDocument["cursor"] as BsonDocument)["firstBatch"] as List<BsonDocument>
+    val cursor = Dynamic { result.firstDocument["cursor"] }
+
+    val firstBatch = Dynamic { cursor["firstBatch"].list as List<BsonDocument> }
+    //println(result)
+    return MongoDBFindResult(
+        this,
+        Dynamic { cursor["id"].long },
+        firstBatch
+    )
 }
 
 data class MongoUpdate(
@@ -333,4 +372,16 @@ suspend fun MongoDBCollection.createIndex(
         ),
         writeConcern = writeConcern
     )
+}
+
+suspend fun MongoDBFindResult.getMore() = this.collection.getMore(cursorId)
+
+suspend fun MongoDBCollection.getMore(cursorId: Long, batchSize: Int? = null, maxTimeMS: Int? = null): MongoDBFindResult {
+    val result = db.runCommand {
+        putNotNull("getMore", cursorId)
+        putNotNull("collection", collection)
+        putNotNull("batchSize", batchSize)
+        putNotNull("batchSize", maxTimeMS)
+    }
+    return MongoDBFindResult(this, cursorId, Dynamic { result.firstDocument["cursor"]["nextBatch"].list as List<BsonDocument> })
 }
