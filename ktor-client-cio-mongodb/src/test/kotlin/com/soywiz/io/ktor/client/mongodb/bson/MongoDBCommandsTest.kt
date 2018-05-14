@@ -30,8 +30,14 @@ class MongoDBCommandsTest {
     fun testQuery() {
         runBlocking {
             mongo["mydb"]["mycollection"].query().skip(20).limit(10).filter { "test" eq 10 }.firstOrNull()
+            mongo["mydb"]["mycollection"].query { "test" gt 5 }.skip(20).limit(10).filter { "test" eq 10 }.firstOrNull()
+            mongo["mydb"]["mycollection"].query { "test" gt 5 }.skip(20).limit(10).firstOrNull()
             assertEquals(
-                listOf("""mydb:{"find":"mycollection","filter":{"test":{"${'$'}eq":10}},"skip":20,"limit":1}"""),
+                listOf(
+                    """mydb:{"find":"mycollection","filter":{"test":{"${'$'}eq":10}},"skip":20,"limit":1}""",
+                    """mydb:{"find":"mycollection","filter":{"${'$'}and":[{"test":{"${'$'}gt":5}},{"test":{"${'$'}eq":10}}]},"skip":20,"limit":1}""",
+                    """mydb:{"find":"mycollection","filter":{"test":{"${'$'}gt":5}},"skip":20,"limit":1}"""
+                ),
                 log
             )
         }
