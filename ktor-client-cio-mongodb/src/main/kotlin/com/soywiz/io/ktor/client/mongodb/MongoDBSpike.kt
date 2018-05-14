@@ -1,6 +1,5 @@
 package com.soywiz.io.ktor.client.mongodb
 
-import com.soywiz.io.ktor.client.util.*
 import kotlinx.coroutines.experimental.*
 
 object MongoDBSpike {
@@ -48,12 +47,12 @@ object MongoDBSpike {
             println(helloCollection.insert(mapOf("a" to "c")))
             println(simpleDb.eval("function() { return {a: 10}; }"))
             //println(mongo.eval("admin", "functio() { return {a: 10}; }"))
-            println(helloCollection.find { "a" eq "b" })
+            println(helloCollection.findFirstBatch { "a" eq "b" })
             println(helloCollection.update(
                 MongoUpdate(mapOf("\$set" to mapOf("a" to "e")), multi = true) { "a" eq "d" }
             ))
             helloCollection.delete(limit = true) { "a" eq "d" }
-            println(helloCollection.find())
+            println(helloCollection.findFirstBatch())
         }
     }
 }
