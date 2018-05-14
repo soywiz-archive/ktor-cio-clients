@@ -11,7 +11,11 @@ data class MongoDBQuery(val config: Config) : SuspendingSequence<BsonDocument> {
         val projection: BsonDocument? = null,
         val skip: Int? = null,
         val limit: Int? = null
-    )
+    ) {
+        val db get() = collection.db
+        val filterDocOrNull by lazy { filter?.invoke(MongoDBQueryBuilder) }
+        val filterDoc by lazy { filterDocOrNull ?: mapOf() }
+    }
 
     fun skip(count: Int) = copy(config = config.copy(skip = count))
     fun limit(count: Int) = copy(config = config.copy(limit = count))
@@ -80,8 +84,20 @@ enum class MongoDBDeleteKind {
     ONE, ALL
 }
 
+suspend fun MongoDBQuery.count(): Long {
+    val collection = config.collection
+    val db = collection.db
+    val result = db.runCommand {
+        putNotNull("count", collection.collection)
+        putNotNull("query", config.filterDoc)
+        putNotNull("limit", config.limit)
+        putNotNull("skip", config.skip)
+    }.checkErrors()
+    return Dynamic { result.firstDocument["n"].long }
+}
+
 suspend fun MongoDBQuery.delete(kind: MongoDBDeleteKind): BsonDocument =
-    config.collection.delete(limit = kind == MongoDBDeleteKind.ONE, q = { config.filter?.invoke(this) ?: mapOf() })
+    config.collection.delete(limit = kind == MongoDBDeleteKind.ONE, q = { config.filterDoc })
 
 suspend fun MongoDBQuery.deleteOne() = delete(kind = MongoDBDeleteKind.ONE)
 suspend fun MongoDBQuery.deleteAll() = delete(kind = MongoDBDeleteKind.ALL)
@@ -94,3 +110,18 @@ suspend fun MongoDBCollection.select(filter: (MongoDBQueryBuilder.() -> BsonDocu
 
 suspend fun MongoDBCollection.find(filter: (MongoDBQueryBuilder.() -> BsonDocument)? = null): MongoDBQuery =
     MongoDBQuery(MongoDBQuery.Config(this, filter = filter))
+
+suspend fun MongoDBQuery.group(group: BsonDocument): List<BsonDocument> {
+    val pipelines = arrayListOf<BsonDocument>()
+    if (config.skip != null) pipelines += mapOf("\$skip" to config.skip)
+    if (config.limit != null) pipelines += mapOf("\$limit" to config.limit)
+    if (config.filterDocOrNull != null) pipelines += mapOf("\$match" to config.filterDocOrNull)
+    pipelines += mapOf("\$group" to group)
+    val result = this.config.collection.aggregate(*pipelines.toTypedArray())
+        .checkErrors()
+    return result.firstDocument["result"] as List<BsonDocument>
+}
+
+suspend fun MongoDBQuery.max(field: String): Any? = group(mapOf("_id" to null, "max" to mapOf("\$max" to "\$$field"))).first()["max"]
+suspend fun MongoDBQuery.min(field: String): Any? = group(mapOf("_id" to null, "min" to mapOf("\$min" to "\$$field"))).first()["min"]
+

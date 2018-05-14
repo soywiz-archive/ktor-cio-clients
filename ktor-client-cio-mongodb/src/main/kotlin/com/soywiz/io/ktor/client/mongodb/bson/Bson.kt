@@ -1,6 +1,5 @@
 package com.soywiz.io.ktor.client.mongodb.bson
 
-import com.soywiz.io.ktor.client.mongodb.*
 import com.soywiz.io.ktor.client.mongodb.util.*
 import com.soywiz.io.ktor.client.util.*
 import kotlinx.io.core.*
@@ -8,6 +7,20 @@ import java.io.*
 import java.math.*
 import java.util.*
 import kotlin.collections.LinkedHashSet
+import kotlin.collections.List
+import kotlin.collections.Map
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.contentEquals
+import kotlin.collections.contentHashCode
+import kotlin.collections.iterator
+import kotlin.collections.mapIndexed
+import kotlin.collections.plusAssign
+import kotlin.collections.set
+import kotlin.collections.sliceArray
+import kotlin.collections.toList
+import kotlin.collections.toMap
+import kotlin.collections.toString
 
 /**
  * http://bsonspec.org/
@@ -41,7 +54,8 @@ object Bson {
                 writeBsonElementHead(
                     0x04, name
                 ).writeBsonDocument(obj.mapIndexed { index, value -> "$index" to value }.toMap())
-
+            is Iterable<*> -> writeBsonElement(name, obj.toList())
+            is Array<*> -> writeBsonElement(name, obj.toList())
             is ByteArray -> writeBsonElementHead(0x05, name).writeBsonBinary(0x00, obj)
             is BsonFunction -> writeBsonElementHead(0x05, name).writeBsonBinary(0x01, obj.data)
             is BsonBinaryOld -> writeBsonElementHead(0x05, name).writeBsonBinary(0x02, obj.data)
@@ -224,6 +238,7 @@ class BsonObjectId(data: ByteArray) : BsonBinaryBase(data) {
     }
 
     constructor(hex: String) : this(Hex.decode(hex))
+
     val hex: String get() = Hex.encode(this.data)
     override fun toString(): String = "ObjectId(\"${Hex.encodeLower(data)}\")"
 }

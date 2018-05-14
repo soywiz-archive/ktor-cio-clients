@@ -72,7 +72,8 @@ suspend fun MongoDBDatabase.eval(function: String, vararg args: Any?): Any? {
     }.checkErrors().firstDocument["retval"]
 }
 
-class MongoDBFindResult(val collection: MongoDBCollection, val cursorId: Long, val batch: List<BsonDocument>) : List<BsonDocument> by batch {
+class MongoDBFindResult(val collection: MongoDBCollection, val cursorId: Long, val batch: List<BsonDocument>) :
+    List<BsonDocument> by batch {
     override fun toString(): String = batch.toString()
 }
 
@@ -133,12 +134,31 @@ suspend fun MongoDBCollection.findFirstBatch(
     val cursor = Dynamic { result.firstDocument["cursor"] }
 
     val firstBatch = Dynamic { cursor["firstBatch"].list as List<BsonDocument> }
-    //println(result)
+    println(result)
     return MongoDBFindResult(
         this,
         Dynamic { cursor["id"].long },
         firstBatch
     )
+}
+
+/**
+ * https://docs.mongodb.com/v3.4/reference/command/aggregate/
+ */
+suspend fun MongoDBCollection.aggregate(
+    vararg pipeline: BsonDocument,
+    explain: Boolean? = null,
+    allowDiskUse: Boolean? = null
+): MongoDB.Reply {
+    val result = db.runCommand {
+        putNotNull("aggregate", collection)
+        //println(pipeline.toList())
+        putNotNull("pipeline", pipeline)
+        putNotNull("explain", explain)
+        putNotNull("allowDiskUse", allowDiskUse)
+    }
+    //println(result)
+    return result
 }
 
 data class MongoUpdate(
@@ -301,12 +321,19 @@ suspend fun MongoDBCollection.createIndex(
 
 suspend fun MongoDBFindResult.getMore() = this.collection.getMore(cursorId)
 
-suspend fun MongoDBCollection.getMore(cursorId: Long, batchSize: Int? = null, maxTimeMS: Int? = null): MongoDBFindResult {
+suspend fun MongoDBCollection.getMore(
+    cursorId: Long,
+    batchSize: Int? = null,
+    maxTimeMS: Int? = null
+): MongoDBFindResult {
     val result = db.runCommand {
         putNotNull("getMore", cursorId)
         putNotNull("collection", collection)
         putNotNull("batchSize", batchSize)
         putNotNull("batchSize", maxTimeMS)
     }
-    return MongoDBFindResult(this, cursorId, Dynamic { result.firstDocument["cursor"]["nextBatch"].list as List<BsonDocument> })
+    return MongoDBFindResult(
+        this,
+        cursorId,
+        Dynamic { result.firstDocument["cursor"]["nextBatch"].list as List<BsonDocument> })
 }

@@ -10,11 +10,15 @@ object MongoDBSpike {
                 val mongo = MongoDB()
                 val simpleDb = mongo["simple1"]
                 val helloCollection = simpleDb["hello1"]
+                println(helloCollection.find().min("a"))
+                println(helloCollection.find().max("a"))
+                println(helloCollection.find { "a" lt 300 }.max("a"))
                 //for (n in 0 until 410) helloCollection.insert(mapOf("a" to n))
                 //helloCollection.query().deleteAll()
                 //for (item in helloCollection.query()) {
                 //    println("item: $item")
                 //}
+                //println(helloCollection.query().skip(10).limit(20).count())
                 //println(helloCollection.query().toList().size)
                 /*
                 val result = helloCollection.find { all() }
