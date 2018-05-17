@@ -32,7 +32,7 @@ fun <T> List<T>.toSuspendingSequence() = object : SuspendingSequence<T> {
     }
 }
 
-suspend fun <T, R> SuspendingSequence<T>.map(transform: (T) -> R): SuspendingSequence<R> {
+suspend fun <T, R> SuspendingSequence<T>.map(transform: suspend (T) -> R): SuspendingSequence<R> {
     return object : SuspendingSequence<R> {
         override suspend fun iterator(): SuspendingIterator<R> {
             val iter = this@map.iterator()
