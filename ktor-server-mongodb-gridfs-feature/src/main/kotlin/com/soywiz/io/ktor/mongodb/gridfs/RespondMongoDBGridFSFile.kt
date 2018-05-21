@@ -27,13 +27,13 @@ suspend fun ApplicationCall.respondMongoDBGridFSFile(
     headers: Headers = Headers.build { }
 ) {
     try {
-        respond(GridFSFile(db, file, contentType, status, headers))
+        respond(GridFSFileContent(db, file, contentType, status, headers))
     } catch (e: MongoDBFileNotFoundException) {
 
     }
 }
 
-class GridFSFile private constructor(
+class GridFSFileContent private constructor(
     val db: MongoDBGridFS,
     val file: String,
     val info: MongoDBGridFS.FileInfo,
@@ -48,11 +48,11 @@ class GridFSFile private constructor(
             contentType: ContentType?,
             status: HttpStatusCode?,
             headers: Headers
-        ): GridFSFile {
+        ): GridFSFileContent {
             val info = db.getInfo(file)
             val realContentType = contentType ?: info.contentType?.let { ContentType.parse(it) } ?: ContentType.defaultForFilePath(file)
             //println("realContentType=$realContentType, contentLength=${info.length}")
-            return GridFSFile(
+            return GridFSFileContent(
                 db, file, info,
                 realContentType,
                 status, headers
