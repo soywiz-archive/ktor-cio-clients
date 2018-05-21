@@ -56,8 +56,8 @@ interface MongoDB {
             if (writeErrors != null) Dynamic {
                 throw MongoDBWriteException(writeErrors.list.map {
                     MongoDBException(
-                        writeErrors["errmsg"].toString(),
-                        writeErrors["code"].toIntDefault(-1)
+                        it["errmsg"].toString(),
+                        it["code"].toIntDefault(-1)
                     )
                 })
             }
