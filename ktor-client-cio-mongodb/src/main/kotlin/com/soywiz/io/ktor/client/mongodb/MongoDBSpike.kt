@@ -1,8 +1,24 @@
 package com.soywiz.io.ktor.client.mongodb
 
+import com.soywiz.io.ktor.client.mongodb.gridfs.*
 import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.experimental.io.*
+import kotlinx.io.core.*
 
 object MongoDBSpike {
+    object GridTest {
+        @JvmStatic
+        fun main(args: Array<String>) {
+            runBlocking {
+                val mongo = MongoDB()
+                val grid = mongo["test"].gridFs()
+                //println(grid.getInfo("README.md"))
+                //val data = grid.get("README.md", 10L until 20L).readRemaining().readBytes()
+                val data = grid.get("README.md").readRemaining().readBytes()
+                println(data.toString(Charsets.UTF_8))
+            }
+        }
+    }
     object A {
         @JvmStatic
         fun main(args: Array<String>) {

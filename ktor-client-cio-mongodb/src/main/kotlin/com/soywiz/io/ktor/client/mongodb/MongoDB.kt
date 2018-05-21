@@ -284,10 +284,12 @@ class MongoDBClient(val pipesFactory: suspend () -> Pipes) : MongoDB {
 
 }
 
-class MongoDBWriteException(val exceptions: List<MongoDBException>) :
-    RuntimeException(exceptions.map { it.message }.joinToString(", "))
+open class MongoDBException(message: String, val code: Int = -1) : RuntimeException(message)
 
-class MongoDBException(message: String, val code: Int) : RuntimeException(message)
+open class MongoDBWriteException(val exceptions: List<MongoDBException>) :
+    MongoDBException(exceptions.map { it.message }.joinToString(", "))
+
+class MongoDBFileNotFoundException(val file: String) : MongoDBException("Can't find file '$file'", -1)
 
 fun <K, V> mapOfNotNull(vararg pairs: Pair<K, V>): Map<K, V> {
     val out = LinkedHashMap<K, V>()

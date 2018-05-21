@@ -233,6 +233,8 @@ class BsonUuid(data: ByteArray) : BsonBinaryBase(data)
 class BsonMd5(data: ByteArray) : BsonBinaryBase(data)
 class BsonUserDefined(data: ByteArray) : BsonBinaryBase(data)
 class BsonObjectId(data: ByteArray) : BsonBinaryBase(data) {
+    companion object;
+
     init {
         if (data.size != 12) error("BsonObjectId length must be 12")
     }

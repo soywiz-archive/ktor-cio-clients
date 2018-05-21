@@ -13,6 +13,9 @@ class MongoDBCollection(val db: MongoDBDatabase, val collection: String) {
 operator fun MongoDB.get(db: String): MongoDBDatabase = MongoDBDatabase(this, db)
 operator fun MongoDBDatabase.get(collection: String): MongoDBCollection = MongoDBCollection(this, collection)
 
+@Deprecated("", ReplaceWith("this[collection]"))
+fun MongoDBDatabase.collection(collection: String): MongoDBCollection = this[collection]
+
 suspend inline fun MongoDBDatabase.runCommand(
     numberToSkip: Int = 0, numberToReturn: Int = 1,
     mapGen: MutableMap<String, Any?>.() -> Unit
@@ -134,7 +137,7 @@ suspend fun MongoDBCollection.findFirstBatch(
     val cursor = Dynamic { result.firstDocument["cursor"] }
 
     val firstBatch = Dynamic { cursor["firstBatch"].list as List<BsonDocument> }
-    println(result)
+    //println(result)
     return MongoDBFindResult(
         this,
         Dynamic { cursor["id"].long },

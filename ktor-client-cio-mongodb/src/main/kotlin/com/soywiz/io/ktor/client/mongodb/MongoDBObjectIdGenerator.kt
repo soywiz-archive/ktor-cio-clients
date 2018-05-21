@@ -53,3 +53,6 @@ object MongoDBObjectIdGenerator {
         SecureRandom().nextInt()
     } and 0xFFFFFF
 }
+
+fun BsonObjectId() = MongoDBObjectIdGenerator.generate()
+fun BsonObjectId.Companion.create() = BsonObjectId()
