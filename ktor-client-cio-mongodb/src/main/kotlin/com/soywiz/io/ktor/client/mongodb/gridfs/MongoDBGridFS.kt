@@ -57,7 +57,7 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
                 put("n", n)
                 put("data", chunk.copyOf(thisChunkSize))
             })
-            length += chunk.size
+            length += thisChunkSize
             n++
         }
         val md5 = md5Builder.digest()
@@ -129,6 +129,8 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
                 val chunkData = getChunk(info.fileId, chunk)
                 val availableInChunk = (chunkData.size - skip).toLong()
                 val toRead = min(availableInChunk, remaining)
+                if (toRead <= 0) throw IllegalStateException("invalid GridFS")
+                //println("chunk: $chunk, skip:$skip, availableInChunk: $availableInChunk, toRead: $toRead, remaining: $remaining")
                 channel.writeFully(chunkData, skip, toRead.toInt())
                 position += toRead
             }
