@@ -20,21 +20,21 @@ fun Route.gridFS(grid: MongoDBGridFS, validate: suspend ApplicationCall.(filenam
 }
 
 suspend fun ApplicationCall.respondMongoDBGridFSFile(
-    db: MongoDBGridFS,
+    grid: MongoDBGridFS,
     file: String,
     contentType: ContentType? = null,
     status: HttpStatusCode? = null,
     headers: Headers = Headers.build { }
 ) {
     try {
-        respond(GridFSFileContent(db, file, contentType, status, headers))
+        respond(GridFSFileContent(grid, file, contentType, status, headers))
     } catch (e: MongoDBFileNotFoundException) {
 
     }
 }
 
 class GridFSFileContent private constructor(
-    val db: MongoDBGridFS,
+    val grid: MongoDBGridFS,
     val file: String,
     val info: MongoDBGridFS.FileInfo,
     override val contentType: ContentType,
@@ -43,17 +43,17 @@ class GridFSFileContent private constructor(
 ) : OutgoingContent.ReadChannelContent() {
     companion object {
         suspend operator fun invoke(
-            db: MongoDBGridFS,
+            grid: MongoDBGridFS,
             file: String,
             contentType: ContentType?,
             status: HttpStatusCode?,
             headers: Headers
         ): GridFSFileContent {
-            val info = db.getInfo(file)
+            val info = grid.getInfo(file)
             val realContentType = contentType ?: info.contentType?.let { ContentType.parse(it) } ?: ContentType.defaultForFilePath(file)
             //println("realContentType=$realContentType, contentLength=${info.length}")
             return GridFSFileContent(
-                db, file, info,
+                grid, file, info,
                 realContentType,
                 status, headers
             )
@@ -63,7 +63,7 @@ class GridFSFileContent private constructor(
     override val contentLength: Long get() = info.length
 
     // @TODO: These two functions should be suspend!
-    override fun readFrom(): ByteReadChannel = db.get(info)
+    override fun readFrom(): ByteReadChannel = grid.get(info)
 
-    override fun readFrom(range: LongRange): ByteReadChannel = db.get(info, range)
+    override fun readFrom(range: LongRange): ByteReadChannel = grid.get(info, range)
 }
