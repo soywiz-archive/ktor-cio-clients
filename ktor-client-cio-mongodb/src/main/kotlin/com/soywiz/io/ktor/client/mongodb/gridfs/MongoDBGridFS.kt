@@ -13,6 +13,10 @@ import kotlin.math.*
  * https://docs.mongodb.com/manual/core/gridfs/
  */
 class MongoDBGridFS(val db: MongoDBDatabase) {
+    companion object {
+        val DEFAULT_CHUNK_SIZE = 255 * 1024
+    }
+
     private val fsFiles = db["fs.files"]
     private val fsChunks = db["fs.chunks"]
     private val initOnce = OnceAsync()
@@ -24,10 +28,6 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
                 fsChunks.createIndex("files_id_1_n_1", "files_id" to +1, "n" to +1, unique = true)
             }
         }
-    }
-
-    companion object {
-        val DEFAULT_CHUNK_SIZE = 255 * 1024
     }
 
     suspend fun delete(filename: String) {
@@ -120,8 +120,7 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
         return data ?: throw MongoDBChunkNotFoundException(fileId, n)
     }
 
-    suspend fun get(name: String, range: LongRange? = null): ByteReadChannel {
-        val info = getInfo(name)
+    fun get(info: FileInfo, range: LongRange? = null): ByteReadChannel {
         val rangeNotNull = range ?: (0L until info.length)
         val realRange =
             rangeNotNull.start.clamp(0L, info.length) until (rangeNotNull.endInclusive + 1).clamp(0L, info.length)
@@ -144,6 +143,10 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
             this.channel.flush()
 
         }.channel
+    }
+
+    suspend fun get(name: String, range: LongRange? = null): ByteReadChannel {
+        return get(getInfo(name), range)
     }
 }
 
