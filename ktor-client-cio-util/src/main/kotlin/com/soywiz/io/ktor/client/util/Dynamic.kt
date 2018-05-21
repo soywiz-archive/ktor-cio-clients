@@ -1,7 +1,13 @@
 package com.soywiz.io.ktor.client.util
 
-
 object Dynamic {
+    val Any?.map: Map<Any?, Any?>
+        get() = when (this) {
+            is Map<*, *> -> this as Map<Any?, Any?>
+            is Iterable<*> -> this.list.withIndex().map { it.index to it }.toMap()
+            else -> mapOf()
+        }
+
     val Any?.list: List<Any?>
         get() = when (this) {
             is List<*> -> this
@@ -25,6 +31,15 @@ object Dynamic {
         else -> null
     }
 
+    fun Any?.toBoolOrNull(): Boolean? = when (this) {
+        is Boolean -> this
+        is Number -> toInt() != 0
+        "true" -> true
+        "false" -> false
+        is String -> this.toIntOrNull(10) != 0
+        else -> null
+    }
+
     fun Any?.toIntOrNull(): Int? = when (this) {
         is Number -> toInt()
         is String -> this.toIntOrNull(10)
@@ -42,6 +57,8 @@ object Dynamic {
         is String -> this.toDouble()
         else -> null
     }
+
+    fun Any?.toBoolDefault(default: Boolean = false): Boolean = toBoolOrNull() ?: default
 
     fun Any?.toIntDefault(default: Int = 0): Int = when (this) {
         is Number -> toInt()
@@ -68,6 +85,7 @@ object Dynamic {
     }
 
     val Any?.str: String get() = toString()
+    val Any?.bool: Boolean get() = toBoolDefault()
     val Any?.int: Int get() = toIntDefault()
     val Any?.float: Float get() = toFloatDefault()
     val Any?.double: Double get() = toDoubleDefault()

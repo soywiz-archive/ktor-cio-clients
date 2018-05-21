@@ -40,9 +40,25 @@ suspend inline fun MongoDBDatabase.runCommand(
 */
 suspend fun MongoDB.isMaster(): MongoDB.Reply = runCommand("admin") { putNotNull("isMaster", true) }
 
-// @TODO: Incomplete
-suspend fun MongoDBCollection.listIndexes(): MongoDB.Reply {
-    return db.runCommand { putNotNull("listIndexes", collection) }
+suspend fun MongoDBCollection.listIndexes(): List<MongoDBIndex> {
+    val result = db.runCommand { putNotNull("listIndexes", collection) }
+    //println(result.firstDocument)
+    val cursor = result.firstDocument["cursor"]
+    val firstBatch = Dynamic { cursor["firstBatch"].list as List<BsonDocument> }
+    return MongoDBFindResult(
+        this,
+        Dynamic { cursor["id"].long },
+        firstBatch
+    ).pagedIterator().toList().map {
+        Dynamic {
+            MongoDBIndex(
+                name = it["name"].str,
+                keys = it["key"].map.map { it.key.str to it.value.int },
+                ns = it["ns"]?.str,
+                unique = it["unique"]?.bool ?: false
+            )
+        }
+    }
 }
 
 /**
@@ -227,9 +243,10 @@ suspend fun MongoDBCollection.delete(
 /**
  * https://docs.mongodb.com/manual/reference/command/createIndexes/
  */
-class MongoDBIndex(
+data class MongoDBIndex(
     val name: String,
-    vararg val keys: Pair<String, Int>,
+    val keys: List<Pair<String, Int>>,
+    val ns: String? = null,
     val unique: Boolean? = null,
     val background: Boolean? = null,
     val partialFilterExpression: BsonDocument? = null,
@@ -311,7 +328,7 @@ suspend fun MongoDBCollection.createIndex(
 ): BsonDocument {
     return createIndexes(
         MongoDBIndex(
-            name, *keys,
+            name, keys.toList(),
             unique = unique, background = background, partialFilterExpression = partialFilterExpression,
             sparse = sparse, expireAfterSeconds = expireAfterSeconds, storageEngine = storageEngine,
             weights = weights, default_language = default_language, language_override = language_override,
@@ -320,6 +337,37 @@ suspend fun MongoDBCollection.createIndex(
         ),
         writeConcern = writeConcern
     )
+}
+
+suspend fun MongoDBFindResult.pagedIterator(): SuspendingIterator<BsonDocument> {
+    var current = this
+    return object : SuspendingIterator<BsonDocument> {
+        private val hasMoreInBatch get() = pos < current.batch.size
+        private val hasMoreBatches get() = current.batch.isNotEmpty()
+        var pos = 0
+
+        private suspend fun getMore() {
+            if (hasMoreBatches) {
+                current = current.getMore()
+            }
+            pos = 0
+        }
+
+        private suspend fun getMoreIfRequired() {
+            if (!hasMoreInBatch) getMore()
+        }
+
+        override suspend fun hasNext(): Boolean {
+            getMoreIfRequired()
+            return hasMoreInBatch
+        }
+
+        override suspend fun next(): BsonDocument {
+            getMoreIfRequired()
+            if (!hasMoreInBatch) throw NoSuchElementException()
+            return current.batch[pos++]
+        }
+    }
 }
 
 suspend fun MongoDBFindResult.getMore() = this.collection.getMore(cursorId)

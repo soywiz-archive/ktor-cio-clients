@@ -40,41 +40,13 @@ data class MongoDBQuery(val config: Config) : SuspendingSequence<BsonDocument> {
     fun sortedBy(vararg pairs: Pair<String, Int>) = copy(config = config.copy(sort = pairs.toList().toMap()))
 
     override suspend fun iterator(): SuspendingIterator<BsonDocument> {
-        var current = config.collection.findFirstBatch(
+        return config.collection.findFirstBatch(
             sort = config.sort,
             projection = config.projection,
             skip = config.skip,
             limit = config.limit,
             filter = config.filter
-        )
-
-        return object : SuspendingIterator<BsonDocument> {
-            private val hasMoreInBatch get() = pos < current.batch.size
-            private val hasMoreBatches get() = current.batch.isNotEmpty()
-            var pos = 0
-
-            private suspend fun getMore() {
-                if (hasMoreBatches) {
-                    current = current.getMore()
-                }
-                pos = 0
-            }
-
-            private suspend fun getMoreIfRequired() {
-                if (!hasMoreInBatch) getMore()
-            }
-
-            override suspend fun hasNext(): Boolean {
-                getMoreIfRequired()
-                return hasMoreInBatch
-            }
-
-            override suspend fun next(): BsonDocument {
-                getMoreIfRequired()
-                if (!hasMoreInBatch) throw NoSuchElementException()
-                return current.batch[pos++]
-            }
-        }
+        ).pagedIterator()
     }
 
     suspend fun firstOrNull(): BsonDocument? = limit(1).toList().firstOrNull()

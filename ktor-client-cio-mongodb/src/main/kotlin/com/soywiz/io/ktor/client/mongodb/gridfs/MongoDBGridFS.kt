@@ -15,10 +15,15 @@ import kotlin.math.*
 class MongoDBGridFS(val db: MongoDBDatabase) {
     private val fsFiles = db["fs.files"]
     private val fsChunks = db["fs.chunks"]
+    private val initOnce = OnceAsync()
 
-    private suspend fun init() {
-        fsChunks
-            .createIndex("files_id_1_n_1", "files_id" to +1, "n" to +1, unique = true)
+    private suspend fun initOnce() {
+        initOnce {
+            val fsChunksIndices = fsChunks.listIndexes()
+            if (fsChunksIndices.firstOrNull { it.keys == listOf("files_id" to +1, "n" to +1) } == null) {
+                fsChunks.createIndex("files_id_1_n_1", "files_id" to +1, "n" to +1, unique = true)
+            }
+        }
     }
 
     companion object {
@@ -40,6 +45,8 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
         contentType: String? = null,
         metadata: BsonDocument? = null
     ) {
+        initOnce()
+
         // Delete if already exists
         delete(filename)
 
