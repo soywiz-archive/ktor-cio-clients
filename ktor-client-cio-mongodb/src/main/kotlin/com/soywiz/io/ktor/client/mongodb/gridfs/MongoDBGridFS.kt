@@ -5,7 +5,6 @@ import com.soywiz.io.ktor.client.mongodb.bson.*
 import com.soywiz.io.ktor.client.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
-import kotlinx.io.core.*
 import java.security.*
 import java.util.*
 import kotlin.math.*
@@ -48,14 +47,15 @@ class MongoDBGridFS(val db: MongoDBDatabase) {
         val md5Builder = MessageDigest.getInstance("MD5")
         var n = 0
         var length = 0L
-        while (data.isClosedForRead) {
-            val chunk = data.readPacket(chunkSize).readBytes()
+        val chunk = ByteArray(chunkSize)
+        while (!data.isClosedForRead) {
+            val thisChunkSize = data.readAvailable(chunk, 0, chunkSize)
             md5Builder.update(chunk)
             fsChunks.insert(mongoMap {
                 put("_id", BsonObjectId())
                 put("files_id", fileObjectId)
                 put("n", n)
-                put("data", chunk)
+                put("data", chunk.copyOf(thisChunkSize))
             })
             length += chunk.size
             n++

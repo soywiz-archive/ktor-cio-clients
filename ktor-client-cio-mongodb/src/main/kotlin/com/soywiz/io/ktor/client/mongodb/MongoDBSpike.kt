@@ -12,6 +12,7 @@ object MongoDBSpike {
             runBlocking {
                 val mongo = MongoDB()
                 val grid = mongo["test"].gridFs()
+                grid.put("multi-chunk-file", ByteReadChannel(buildPacket { for (n in 0 until 256 * 1024) writeInt(n) }.readBytes()))
                 //println(grid.getInfo("README.md"))
                 //val data = grid.get("README.md", 10L until 20L).readRemaining().readBytes()
                 val data = grid.get("README.md").readRemaining().readBytes()
