@@ -24,26 +24,26 @@ object AmazonAuth {
         }
 
         if (finalAccessKey.isNullOrEmpty()) {
-            try {
-                val userHome = System.getProperty("user.home")
-                val credentials = File(userHome, ".aws/credentials").readText()
-                finalAccessKey =
-                        (Regex("aws_access_key_id\\s+=\\s+(.*)").find(credentials)?.groupValues?.getOrElse(1) { "" }
-                                ?: "").trim()
-                finalSecretKey =
-                        (Regex("aws_secret_access_key\\s+=\\s+(.*)").find(credentials)?.groupValues?.getOrElse(1) { "" }
-                                ?: "").trim()
-            } catch (e: IOException) {
+            val userHome = System.getProperty("user.home")
+            val credentialsFile = File(userHome, ".aws/credentials")
+            if (credentialsFile.exists() && credentialsFile.canRead()) {
+                val credentials = credentialsFile.readText()
+                finalAccessKey = (Regex("aws_access_key_id\\s+=\\s+(.*)")
+                    .find(credentials)?.groupValues?.getOrElse(1) { "" } ?: "").trim()
+                finalSecretKey = (Regex("aws_secret_access_key\\s+=\\s+(.*)")
+                    .find(credentials)?.groupValues?.getOrElse(1) { "" } ?: "").trim()
             }
         }
-        return if (finalAccessKey != null && finalSecretKey != null) Credentials(
-            finalAccessKey,
-            finalSecretKey
-        ) else Credentials("", "")
+        return if (finalAccessKey != null && finalSecretKey != null) {
+            Credentials(finalAccessKey, finalSecretKey)
+        } else {
+            Credentials("", "")
+        }
     }
 
     object V1 {
         val DATE_FORMAT = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z")
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
 
         suspend private fun macProcess(key: ByteArray, algo: String, data: ByteArray): ByteArray {
             return Mac.getInstance(algo).apply { init(SecretKeySpec(key, algo)) }.doFinal(data)
@@ -76,7 +76,7 @@ object AmazonAuth {
                 amzHeaders.entries.sortedBy { it.key }.map { "${it.key}:${it.value}\n" }.joinToString()
             val canonicalizedResource = cannonicalPath
             val toSign =
-                method.value + "\n" + contentMd5 + "\n" + contentType + "\n" + date + "\n" + canonicalizedAmzHeaders + canonicalizedResource
+                "${method.value}\n$contentMd5\n$contentType\n$date\n$canonicalizedAmzHeaders$canonicalizedResource"
             val signature = macProcessStringsB64(secretKey, "HmacSHA1", toSign)
             return "AWS $accessKey:$signature"
         }
@@ -206,16 +206,8 @@ object AmazonAuth {
             return Headers.build {
                 appendAll(headers)
                 set(
-                    "Authorization", getAuthorization(
-                        accessKey,
-                        secretKey,
-                        method,
-                        url,
-                        headers,
-                        payload,
-                        region,
-                        service
-                    )
+                    "Authorization",
+                    getAuthorization(accessKey, secretKey, method, url, headers, payload, region, service)
                 )
             }
         }

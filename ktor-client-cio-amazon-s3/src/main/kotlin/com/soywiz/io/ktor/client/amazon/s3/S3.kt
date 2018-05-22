@@ -10,6 +10,8 @@ import io.ktor.client.response.*
 import io.ktor.content.*
 import io.ktor.http.*
 import kotlinx.coroutines.experimental.io.*
+import kotlinx.io.core.*
+import java.nio.charset.*
 
 // http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html#ConstructingTheAuthenticationHeader
 // https://github.com/jubos/fake-s3
@@ -36,6 +38,9 @@ class S3(
             )
         }
     }
+
+    fun getURL(bucket: String, key: String) = endpointPattern.replace("{bucket}", bucket).replace("{key}", key)
+    val url get() = getURL("", "")
 
     data class ParsedPath(val bucket: String, val key: String, val endpointPattern: String) {
         val url = endpointPattern.replace("{bucket}", bucket).replace("{key}", key)
@@ -92,14 +97,14 @@ class S3(
         path: String,
         content: OutgoingContent,
         access: ACL = ACL.PRIVATE,
-        contentType: ContentType = ContentType.defaultForFilePath(path)
+        contentType: ContentType? = null
     ): Long {
         val length = content.contentLength ?: error("contentLength must be set for content")
         request(
             HttpMethod.Put,
             path,
             headers = Headers.build {
-                contentType(contentType)
+                contentType(contentType ?: ContentType.defaultForFilePath(path))
                 contentLength(length)
                 set("x-amz-acl", access.text)
             },
@@ -158,12 +163,14 @@ class S3(
 }
 
 class S3Bucket(val s3: S3, val bucket: String) {
+    val url get() = s3.getURL(bucket, "")
+
     private fun getPath(file: String) = "$bucket/$file"
     suspend fun put(
         file: String,
         content: OutgoingContent,
         access: S3.ACL = S3.ACL.PRIVATE,
-        contentType: ContentType = ContentType.defaultForFilePath(file)
+        contentType: ContentType? = null
     ) = s3.put(getPath(file), content, access, contentType)
 
     suspend fun stat(file: String) = s3.stat(getPath(file))
@@ -171,18 +178,27 @@ class S3Bucket(val s3: S3, val bucket: String) {
 }
 
 class S3File(val bucket: S3Bucket, val file: String) {
+    val url get() = bucket.s3.getURL(bucket.bucket, file)
+
     suspend fun put(
         content: OutgoingContent,
         access: S3.ACL = S3.ACL.PRIVATE,
-        contentType: ContentType = ContentType.defaultForFilePath(file)
+        contentType: ContentType? = null
     ) = bucket.put(file, content, access, contentType)
 
     suspend fun stat() = bucket.stat(file)
     suspend fun get(range: LongRange? = null) = bucket.get(file, range)
+
+    suspend fun readBytes() = get().readRemaining().readBytes()
+    suspend fun readString(charset: Charset = Charsets.UTF_8) = readBytes().toString(charset)
+
+    suspend fun writeBytes(content: ByteArray, contentType: ContentType? = null, access: S3.ACL = S3.ACL.PRIVATE) = put(ByteArrayContentWithLength(content), contentType = contentType, access = access)
+    suspend fun writeString(content: String, charset: Charset = Charsets.UTF_8, contentType: ContentType? = null, access: S3.ACL = S3.ACL.PRIVATE) = writeBytes(content.toByteArray(charset), contentType = contentType, access = access)
 }
 
 fun S3Bucket.file(name: String) = S3File(this, name)
 fun S3.bucket(name: String) = S3Bucket(this, name)
+fun S3.file(bucket: String, key: String) = bucket(bucket).file(key)
 
 private fun Headers.withReplaceHeaders(vararg items: Pair<String, String>): Headers {
     return Headers.build {
@@ -190,3 +206,14 @@ private fun Headers.withReplaceHeaders(vararg items: Pair<String, String>): Head
         for ((key, value) in items) set(key, value)
     }
 }
+
+// @TODO: ByteArrayContent should provide contentLength
+class ByteArrayContentWithLength(private val bytes: ByteArray) : OutgoingContent.ByteArrayContent() {
+    override val contentLength: Long = bytes.size.toLong()
+    override fun bytes(): ByteArray = bytes
+}
+
+fun ByteArrayContentWithLength(
+    str: String,
+    charset: Charset = Charsets.UTF_8
+): ByteArrayContentWithLength = ByteArrayContentWithLength(str.toByteArray(charset))
