@@ -1,4 +1,6 @@
 dependencies {
     compile project(":ktor-client-cio-amazon-core")
     testCompile "io.ktor:ktor-server-test-host:$ktor_version"
+    testCompile project(":ktor-client-cio-test-host")
+
 }
