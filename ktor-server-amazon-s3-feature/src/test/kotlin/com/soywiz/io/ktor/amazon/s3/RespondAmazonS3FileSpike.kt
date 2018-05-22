@@ -18,11 +18,12 @@ object RespondAmazonS3FileSpike {
                 S3(
                     "http://127.0.0.1:4567/{bucket}/{key}",
                     accessKey = "demo", secretKey = "demo"
-                ).apply {
-                    put("mybucket/index.html", ByteArrayContentWithLength("HELLO WORLD FROM S3"))
-                }
+                )
             }
             val bucket = s3.bucket("mybucket")
+            runBlocking {
+                bucket.put("index.html", ByteArrayContentWithLength("HELLO WORLD FROM S3"))
+            }
             install(PartialContent)
             routing {
                 get("/{name}") {
