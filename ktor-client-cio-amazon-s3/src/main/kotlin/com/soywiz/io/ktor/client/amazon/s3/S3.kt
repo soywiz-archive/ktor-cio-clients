@@ -10,7 +10,6 @@ import io.ktor.client.response.*
 import io.ktor.content.*
 import io.ktor.http.*
 import kotlinx.coroutines.experimental.io.*
-import java.nio.charset.*
 
 // http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html#ConstructingTheAuthenticationHeader
 // https://github.com/jubos/fake-s3
@@ -62,13 +61,21 @@ class S3(
         val result = request(HttpMethod.Head, path)
 
         return if (result.status.isSuccess()) {
-            Stat(exists = true, length = Dynamic { result.headers["content-length"].long })
+            Stat(
+                exists = true,
+                length = Dynamic { result.headers["content-length"].long },
+                contentType = result.headers["content-type"]?.let { ContentType.parse(it) }
+            )
         } else {
             Stat(exists = false)
         }
     }
 
-    data class Stat(val exists: Boolean, val length: Long = 0L)
+    data class Stat(
+        val exists: Boolean,
+        val length: Long = 0L,
+        val contentType: ContentType? = null
+    )
 
     suspend fun get(
         path: String,
@@ -116,7 +123,7 @@ class S3(
         )
         return httpClient.call {
             this.method = method
-            println(npath.url)
+            //println(npath.url)
             this.url(npath.url)
             this.headers { appendAll(mheaders) }
             if (content != null) {
@@ -149,6 +156,33 @@ class S3(
         headers
     }
 }
+
+class S3Bucket(val s3: S3, val bucket: String) {
+    private fun getPath(file: String) = "$bucket/$file"
+    suspend fun put(
+        file: String,
+        content: OutgoingContent,
+        access: S3.ACL = S3.ACL.PRIVATE,
+        contentType: ContentType = ContentType.defaultForFilePath(file)
+    ) = s3.put(getPath(file), content, access, contentType)
+
+    suspend fun stat(file: String) = s3.stat(getPath(file))
+    suspend fun get(file: String, range: LongRange? = null) = s3.get(getPath(file), range)
+}
+
+class S3File(val bucket: S3Bucket, val file: String) {
+    suspend fun put(
+        content: OutgoingContent,
+        access: S3.ACL = S3.ACL.PRIVATE,
+        contentType: ContentType = ContentType.defaultForFilePath(file)
+    ) = bucket.put(file, content, access, contentType)
+
+    suspend fun stat() = bucket.stat(file)
+    suspend fun get(range: LongRange? = null) = bucket.get(file, range)
+}
+
+fun S3Bucket.file(name: String) = S3File(this, name)
+fun S3.bucket(name: String) = S3Bucket(this, name)
 
 private fun Headers.withReplaceHeaders(vararg items: Pair<String, String>): Headers {
     return Headers.build {

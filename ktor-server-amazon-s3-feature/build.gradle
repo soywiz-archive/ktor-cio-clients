@@ -1,0 +1,9 @@
+dependencies {
+    compile "io.ktor:ktor-server-core:$ktor_version"
+
+    testCompile "io.ktor:ktor-server-netty:$ktor_version"
+    testCompile "ch.qos.logback:logback-classic:1.2.1"
+    testCompile "io.ktor:ktor-server-test-host:$ktor_version"
+
+    compile project(":ktor-client-cio-amazon-s3")
+}
