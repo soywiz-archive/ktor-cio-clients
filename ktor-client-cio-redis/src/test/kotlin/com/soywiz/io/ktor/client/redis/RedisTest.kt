@@ -13,16 +13,15 @@ class RedisTest {
         runBlocking {
             val serverWrite = ByteChannel(true)
             val clientWrite = ByteChannel(true)
-            val redis = Redis(1) {
-                Redis.Client {
-                    Redis.Pipes(
-                        serverWrite, clientWrite, Closeable { }
-                    )
-                }
+            val redis = RedisClient {
+                Redis.Pipes(
+                    serverWrite, clientWrite, Closeable { }
+                )
             }
 
+
             serverWrite.writeStringUtf8("-ERROR\r\n")
-            assertFailsWith<Redis.ResponseException>("ERROR") {
+            assertFailsWith<RedisResponseException>("ERROR") {
                 runBlocking {
                     redis.set("hello", "world")
                 }

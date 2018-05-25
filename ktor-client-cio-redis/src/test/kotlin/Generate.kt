@@ -20,13 +20,13 @@ object Generate {
         var errorAppend = ""
         try {
             if (params != null) {
-                val decl = arrayListOf<String>()
-                val invoke = arrayListOf<String>()
+                val decl = ArrayList<String>()
+                val invoke = ArrayList<String>()
                 invoke += nameParts
                 for (param in params.params) {
                     if (param is RedisCommands.PARAM) {
                         decl += "${param.name}: ${param.kotlinType}"
-                        invoke += "${param.name}"
+                        invoke += param.name
                     } else {
                         TODO()
                     }
