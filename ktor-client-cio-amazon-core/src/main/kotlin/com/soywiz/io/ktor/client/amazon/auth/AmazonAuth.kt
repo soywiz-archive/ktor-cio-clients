@@ -42,7 +42,7 @@ object AmazonAuth {
     }
 
     object V1 {
-        val DATE_FORMAT = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z")
+        val DATE_FORMAT = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
 
         suspend private fun macProcess(key: ByteArray, algo: String, data: ByteArray): ByteArray {
