@@ -2,5 +2,5 @@ dependencies {
     compile "io.ktor:ktor-network:$ktor_version"
     compile "io.ktor:ktor-network-tls:$ktor_version"
 
-    compile "org.jetbrains.kotlinx:kotlinx-coroutines-io:$kotlinx_coroutines"
+    compile project(":ktor-client-cio-util")
 }
