@@ -1,0 +1,15 @@
+repositories {
+    jcenter()
+    mavenCentral()
+}
+
+dependencies {
+    compile "io.ktor:ktor-network:$ktor_version"
+    compile "io.ktor:ktor-network-tls:$ktor_version"
+    compile "io.ktor:ktor-server-core:$ktor_version"
+    compile "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.9.5"
+    compile "io.ktor:ktor-jackson:$ktor_version"
+
+    compile project(":ktor-client-cio-util")
+    testCompile "io.ktor:ktor-server-netty:$ktor_version"
+}

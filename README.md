@@ -2,9 +2,12 @@
 
 # ktor-cio-clients
 
-Temporal repository for Ktor CIO Clients.
+Ktor CIO (Coroutine I/O) Clients proposal for JetBrains based on kotlinx.coroutines.
 
-Artifacts published to:
+This is a pet temporal project with Kotlin CIO clients implementing several protocols to connect to popular services.
+Package names are likely to change.
+
+The WIP proposal artifacts are being published to:
 
 ```kotlin
 repositories {
