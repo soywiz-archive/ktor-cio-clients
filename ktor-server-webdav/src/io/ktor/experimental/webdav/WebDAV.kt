@@ -69,20 +69,18 @@ fun Route.webdav(fs: WebDavFilesystem) {
                         listOf()
                     }
 
-                    val result = xml("D:multistatus", "xmlns:D" to "DAV:") {
-                        renderResponse(path, props, rootProps)
-                        for ((rpath, rprops) in extraProps) {
-                            renderResponse(rpath, props, rprops)
+                    //println("RESP: $result")
+                    call.respondWrite(
+                        contentType = ContentType.Application.Xml,
+                        status = WebDavHttpStatusCode.MultiStatus
+                    ) {
+                        xml(this, "D:multistatus", "xmlns:D" to "DAV:") {
+                            renderResponse(path, props, rootProps)
+                            for ((rpath, rprops) in extraProps) {
+                                renderResponse(rpath, props, rprops)
+                            }
                         }
                     }
-
-                    //println("RESP: $result")
-
-                    call.respondText(
-                        result.toString(),
-                        ContentType.Application.Xml,
-                        status = WebDavHttpStatusCode.MultiStatus
-                    )
                 }
             // https://tools.ietf.org/html/rfc2518#section-8.2
                 HttpMethod.PropPatch -> {

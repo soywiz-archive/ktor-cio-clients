@@ -1,8 +1,6 @@
 package io.ktor.experimental.client.util
 
-class xml @PublishedApi internal constructor(dummy: Boolean) {
-    @PublishedApi
-    internal val sb = StringBuilder()
+class xml @PublishedApi internal constructor(val sb: Appendable) {
     @PublishedApi
     internal var indent = 0
 
@@ -126,8 +124,20 @@ class xml @PublishedApi internal constructor(dummy: Boolean) {
     override fun toString(): String = sb.toString()
 }
 
-inline fun xml(name: String, vararg attributes: Pair<String, Any?>, callback: xml.() -> Unit): xml {
-    return xml(true).apply {
+inline fun xml(name: String, vararg attributes: Pair<String, Any?>, callback: xml.() -> Unit): String {
+    val sb = StringBuilder()
+    xml(sb).apply {
+        start(name, attributes)
+        indent {
+            callback()
+        }
+        end(name)
+    }
+    return sb.toString()
+}
+
+inline fun xml(appendable: Appendable, name: String, vararg attributes: Pair<String, Any?>, callback: xml.() -> Unit) {
+    xml(appendable).apply {
         start(name, attributes)
         indent {
             callback()
