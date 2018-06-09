@@ -21,7 +21,7 @@ allprojects {
     apply plugin: 'maven-publish'
     apply plugin: 'com.jfrog.bintray'
 
-    group 'com.soywiz.io.ktor'
+    group 'io.ktor.experimental.clients'
     version '0.0.6'
 
     sourceCompatibility = 1.8
@@ -29,6 +29,10 @@ allprojects {
     compileTestKotlin.kotlinOptions.jvmTarget = "1.8"
 
     kotlin.experimental.coroutines "enable"
+
+    clean.doFirst {
+        delete "${projectDir}/out"
+    }
 
     sourceSets {
         main.kotlin.srcDirs = ['src']
