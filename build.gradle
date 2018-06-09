@@ -30,6 +30,13 @@ allprojects {
 
     kotlin.experimental.coroutines "enable"
 
+    sourceSets {
+        main.kotlin.srcDirs = ['src']
+        test.kotlin.srcDirs = ['test']
+        main.resources.srcDirs = ['resources']
+        test.resources.srcDirs = ['testresources']
+    }
+
     repositories {
         mavenCentral()
         maven { url "https://dl.bintray.com/kotlin/kotlinx" }
