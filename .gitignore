@@ -2,6 +2,7 @@
 /.idea
 /build
 /out
+/webdav-root
 *.iml
 *.ipr
 *.iws

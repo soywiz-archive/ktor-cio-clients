@@ -8,6 +8,8 @@ object Dynamic {
             else -> mapOf()
         }
 
+    val Any?.strList: List<String> get() = list.map { it.str }
+
     val Any?.list: List<Any?>
         get() = when (this) {
             is List<*> -> this

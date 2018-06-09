@@ -13,4 +13,5 @@ dependencies {
     compile project(":ktor-server-xml")
     compile project(":ktor-client-cio-util")
     testCompile "io.ktor:ktor-server-netty:$ktor_version"
+    testCompile 'ch.qos.logback:logback-classic:1.2.1'
 }

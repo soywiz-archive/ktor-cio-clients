@@ -7,11 +7,9 @@ import io.ktor.application.*
 import io.ktor.content.*
 import io.ktor.features.*
 import io.ktor.http.*
-import io.ktor.jackson.*
 import io.ktor.pipeline.*
 import io.ktor.request.*
-import kotlinx.coroutines.experimental.io.*
-import kotlinx.coroutines.experimental.io.jvm.javaio.*
+import java.io.*
 
 class JacksonXmlConverter(private val objectmapper: XmlMapper = XmlMapper()) : ContentConverter {
     override suspend fun convertForSend(
@@ -26,11 +24,7 @@ class JacksonXmlConverter(private val objectmapper: XmlMapper = XmlMapper()) : C
     }
 
     override suspend fun convertForReceive(context: PipelineContext<ApplicationReceiveRequest, ApplicationCall>): Any? {
-        val request = context.subject
-        val type = request.type
-        val value = request.value as? ByteReadChannel ?: return null
-        val reader = value.toInputStream().reader(context.call.request.contentCharset() ?: Charsets.UTF_8)
-        return objectmapper.readValue(reader, type.javaObjectType)
+        return objectmapper.readValue(StringReader(context.call.receiveText()), context.subject.type.javaObjectType)
     }
 }
 
@@ -41,6 +35,6 @@ fun ContentNegotiation.Configuration.jacksonXml(block: XmlMapper.() -> Unit) {
         disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     }
     mapper.apply(block)
-    val converter = JacksonConverter(mapper)
+    val converter = JacksonXmlConverter(mapper)
     register(ContentType.Application.Xml, converter)
 }

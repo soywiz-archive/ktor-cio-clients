@@ -34,6 +34,7 @@ object WebDavSpike {
         }
         //println(mapper.writeValueAsString(propfind()))
 
+        /*
         val text = """<?xml version="1.0" encoding="utf-8" ?>
    <D:propfind xmlns:D="DAV:">
      <D:prop xmlns:R="http://www.foo.bar/boxschema/">
@@ -50,7 +51,10 @@ object WebDavSpike {
         //println(mapper.readValue(xmlReader, Map::class.java))
         println(mapper.readValue(xmlReader, propfind::class.java))
         println(mapper.writeValueAsString(propfind()))
-        /*
+        */
+
+        //println(mapper.writeValueAsString(mapOf("a" to "b")))
+
         embeddedServer(Netty, port = 9090) {
             routing {
                 val webdavRoot = File("webdav-root")
@@ -58,9 +62,10 @@ object WebDavSpike {
                 webdav(FileWebDavFilesystem(webdavRoot))
             }
         }.start(wait = true)
-        */
     }
 }
+
+class MyPropFind
 
 //@JacksonXmlElementWrapper(namespace = "DAV", localName = "propfind", useWrapping = true)
 //@JacksonXmlRootElement(namespace = "DAV", localName = "propfind")
