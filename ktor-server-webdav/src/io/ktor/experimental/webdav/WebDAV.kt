@@ -21,6 +21,9 @@ import java.net.*
 import java.text.*
 import java.util.*
 
+fun Route.webdav(path: String, root: File) = route(path) { webdav(FileWebDavFilesystem(root)) }
+fun Route.webdav(path: String, fs: WebDavFilesystem) = route(path) { webdav(fs) }
+
 /**
  * Acts similar to `Route.static`, but handles WebDAV methods.
  */
