@@ -10,22 +10,36 @@ import java.util.concurrent.*
 
 class CircuitBreakerTest {
     companion object Spike {
+        val redis = Redis()
+
+        val REDIS_SERVICE = CircuitBreaker.Service("redis", timeout = 5) {
+            // We can also introspect monitoring services, number of connections, etc.
+            redis.get("/") // It would fail if redis service is not available.
+            true
+        }
+
+        val io.ktor.application.ApplicationCall.redis: Redis get() = object : Redis {
+            override suspend fun commandAny(vararg args: Any?): Any? {
+                return circuitBreaker.wrap(REDIS_SERVICE) {
+                    this@Spike.redis.commandAny(args)
+                }
+            }
+        }
+
         @JvmStatic fun main(args: Array<String>) {
             embeddedServer(Netty, port = 8080) {
-                val redis = Redis()
-
                 install(CircuitBreaker) {
-                    service("redis") {
-                        // We can also introspect monitoring services, number of connections, etc.
-                        redis.get("/") // It would fail if redis service is not available.
-                        true
-                    }
+                    register(REDIS_SERVICE)
                 }
 
                 routing {
-                    routeTimeout(4, TimeUnit.SECONDS) {
-                        get("/") {
-                            delay(3000L)
+                    get("/") {
+                        val newValue = call.redis.hincrby("myhash", "mykey", 1L)
+                        call.respondText("OK:$newValue")
+                    }
+                    routeTimeout(3, TimeUnit.SECONDS) {
+                        get("/timeout") {
+                            delay(2, TimeUnit.SECONDS)
                             call.respondText("OK")
                         }
                     }
