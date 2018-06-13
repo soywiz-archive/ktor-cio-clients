@@ -12,29 +12,27 @@ import java.util.concurrent.*
 
 class CircuitBreakerTest {
     companion object Spike {
-        val redis = Redis()
+        val redis = Redis(maxConnections = 1)
 
-        val REDIS_SERVICE = CircuitBreaker.Service("redis", timeout = 5, timeoutUnit = TimeUnit.SECONDS) {
+        val RedisService = CircuitBreaker.Service("redis", timeout = 5, timeoutUnit = TimeUnit.SECONDS) {
             // Verify that the service is alive by returning true and not throwing exceptions.
             // We can also introspect monitoring services, number of connections, etc.
             redis.get("/") // It would fail if redis service is not available.
             true
         }
 
-        val io.ktor.application.ApplicationCall.redis: Redis get() {
+        val PipelineContext<Unit, ApplicationCall>.redis: Redis get() {
             return object : Redis {
-                override suspend fun commandAny(vararg args: Any?): Any? = circuitBreaker.wrap(REDIS_SERVICE) {
+                override suspend fun commandAny(vararg args: Any?): Any? = withService(RedisService) {
                     this@Spike.redis.commandAny(*args)
                 }
             }
         }
 
-        val PipelineContext<Unit, ApplicationCall>.redis get() = this.call.redis
-
         @JvmStatic fun main(args: Array<String>) {
             embeddedServer(Netty, port = 8080) {
                 install(CircuitBreaker) {
-                    register(REDIS_SERVICE)
+                    register(RedisService)
                 }
                 install(StatusPages) {
                     exception<TimeoutCancellationException> {

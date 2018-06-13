@@ -1,6 +1,7 @@
 package io.ktor.experimental.circuitbreaker
 
 import io.ktor.application.*
+import io.ktor.pipeline.*
 import io.ktor.routing.*
 import io.ktor.util.*
 import kotlinx.coroutines.experimental.*
@@ -88,6 +89,8 @@ class ServiceNotAvailableException(val service: CircuitBreaker.Service) :
     RuntimeException("Service ${service.name} not available")
 
 val ApplicationCall.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
+val PipelineContext<Unit, ApplicationCall>.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
+suspend fun PipelineContext<Unit, ApplicationCall>.withService(service: CircuitBreaker.Service, callback: suspend () -> Unit) = this.circuitBreaker.wrap(service, callback)
 
 fun Route.routeTimeout(time: Long, unit: TimeUnit = TimeUnit.SECONDS, callback: Route.() -> Unit): Route {
     val routeWithTimeout = createChild(object : RouteSelector(1.0) {
