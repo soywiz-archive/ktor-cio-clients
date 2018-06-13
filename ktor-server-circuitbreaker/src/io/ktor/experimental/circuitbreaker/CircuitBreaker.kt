@@ -90,7 +90,7 @@ class ServiceNotAvailableException(val service: CircuitBreaker.Service) :
 
 val ApplicationCall.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
 val PipelineContext<Unit, ApplicationCall>.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
-suspend fun PipelineContext<Unit, ApplicationCall>.withService(service: CircuitBreaker.Service, callback: suspend () -> Unit) = this.circuitBreaker.wrap(service, callback)
+suspend fun <T> PipelineContext<Unit, ApplicationCall>.withService(service: CircuitBreaker.Service, callback: suspend () -> T) = this.circuitBreaker.wrap(service, callback)
 
 fun Route.routeTimeout(time: Long, unit: TimeUnit = TimeUnit.SECONDS, callback: Route.() -> Unit): Route {
     val routeWithTimeout = createChild(object : RouteSelector(1.0) {

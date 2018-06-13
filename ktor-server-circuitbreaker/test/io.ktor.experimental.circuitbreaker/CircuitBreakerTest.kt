@@ -21,7 +21,7 @@ class CircuitBreakerTest {
             true
         }
 
-        val PipelineContext<Unit, ApplicationCall>.redis: Redis get() {
+        val PipelineContext<Unit, ApplicationCall>.redisWrapped: Redis get() {
             return object : Redis {
                 override suspend fun commandAny(vararg args: Any?): Any? = withService(RedisService) {
                     this@Spike.redis.commandAny(*args)
@@ -45,7 +45,15 @@ class CircuitBreakerTest {
 
                 routing {
                     get("/") {
-                        val newValue = redis.hincrby("myhash", "mykey", 1L)
+                        // Automatically wrapped
+                        val newValue = redisWrapped.hincrby("myhash", "mykey", 1L)
+                        call.respondText("OK:$newValue")
+                    }
+                    get("/inline") {
+                        // Manual wrapping
+                        val newValue = withService(RedisService) {
+                            redis.hincrby("myhash", "mykey", 1L)
+                        }
                         call.respondText("OK:$newValue")
                     }
                     routeTimeout(1, TimeUnit.SECONDS) {
