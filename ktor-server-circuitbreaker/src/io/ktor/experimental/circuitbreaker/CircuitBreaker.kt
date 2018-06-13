@@ -91,9 +91,8 @@ val ApplicationCall.circuitBreaker: CircuitBreaker get() = this.application.feat
 
 fun Route.routeTimeout(time: Long, unit: TimeUnit = TimeUnit.SECONDS, callback: Route.() -> Unit): Route {
     val routeWithTimeout = createChild(object : RouteSelector(1.0) {
-        override fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation {
-            return RouteSelectorEvaluation.Constant
-        }
+        override fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation =
+            RouteSelectorEvaluation.Constant
     })
 
     routeWithTimeout.intercept(ApplicationCallPipeline.Infrastructure) {
