@@ -21,9 +21,11 @@ class CircuitBreakerTest {
             true
         }
 
-        val io.ktor.application.ApplicationCall.redis: Redis get() = object : Redis {
-            override suspend fun commandAny(vararg args: Any?): Any? = circuitBreaker.wrap(REDIS_SERVICE) {
-                this@Spike.redis.commandAny(args)
+        val io.ktor.application.ApplicationCall.redis: Redis get() {
+            return object : Redis {
+                override suspend fun commandAny(vararg args: Any?): Any? = circuitBreaker.wrap(REDIS_SERVICE) {
+                    this@Spike.redis.commandAny(*args)
+                }
             }
         }
 
@@ -37,6 +39,9 @@ class CircuitBreakerTest {
                 install(StatusPages) {
                     exception<TimeoutCancellationException> {
                         call.respond("Timeout!")
+                    }
+                    exception<ServiceNotAvailableException> {
+                        call.respond("Service ${it.service.name} is not available at this point! We are working on it, try again in a few seconds!")
                     }
                 }
 
