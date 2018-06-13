@@ -105,7 +105,7 @@ internal class BlobBuilder(size: Int, val charset: Charset) : ByteArrayOutputStr
         this.write(that.buf(), 0, that.size())
     }
 
-    override fun toString() = toByteArray().toString(charset)
+    override fun toString() = String(buf, 0, size(), charset)
 }
 
 internal suspend fun BlobBuilder.writeTo(channel: ByteWriteChannel) {
