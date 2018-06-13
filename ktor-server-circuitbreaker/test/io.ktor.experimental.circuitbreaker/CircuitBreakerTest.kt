@@ -1,6 +1,7 @@
 import io.ktor.application.*
 import io.ktor.experimental.circuitbreaker.*
 import io.ktor.experimental.client.redis.*
+import io.ktor.pipeline.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.server.engine.*
@@ -26,6 +27,8 @@ class CircuitBreakerTest {
             }
         }
 
+        val PipelineContext<Unit, ApplicationCall>.redis get() = this.call.redis
+
         @JvmStatic fun main(args: Array<String>) {
             embeddedServer(Netty, port = 8080) {
                 install(CircuitBreaker) {
@@ -34,7 +37,7 @@ class CircuitBreakerTest {
 
                 routing {
                     get("/") {
-                        val newValue = call.redis.hincrby("myhash", "mykey", 1L)
+                        val newValue = redis.hincrby("myhash", "mykey", 1L)
                         call.respondText("OK:$newValue")
                     }
                     routeTimeout(3, TimeUnit.SECONDS) {
