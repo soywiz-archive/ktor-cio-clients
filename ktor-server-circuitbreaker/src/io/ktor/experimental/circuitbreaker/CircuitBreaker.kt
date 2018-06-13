@@ -70,7 +70,7 @@ class CircuitBreaker private constructor(pipeline: ApplicationCallPipeline) {
             }
         } catch (e: TimeoutCancellationException) {
             serviceStatus.markAsUnavailable()
-            throw e
+            throw ServiceNotAvailableException(service)
         }
     }
 
