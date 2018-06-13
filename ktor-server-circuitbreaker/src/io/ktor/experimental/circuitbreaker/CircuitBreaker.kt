@@ -7,7 +7,20 @@ import kotlinx.coroutines.experimental.*
 import java.util.concurrent.*
 
 class CircuitBreaker private constructor(config: Configuration, pipeline: ApplicationCallPipeline) {
+    class Service(val name: String, val checkStatus: suspend () -> Boolean)
+
     class Configuration {
+        internal val services = LinkedHashMap<String, Service>()
+
+        /**
+         * Registers a service with a [name] and a [checkStatus] block that checks the status of the service.
+         * If the service is working and available, [checkStatus] should return true. Returning false or throwing
+         * an exception will be interpreted as a non-working service.
+         * [checkStatus] is a suspended block that will be called only once at a time.
+         */
+        fun service(name: String, checkStatus: suspend () -> Boolean) {
+            services[name] = Service(name, checkStatus)
+        }
     }
 
     init {

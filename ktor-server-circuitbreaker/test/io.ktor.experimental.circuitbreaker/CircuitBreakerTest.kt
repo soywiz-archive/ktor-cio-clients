@@ -1,5 +1,6 @@
 import io.ktor.application.*
 import io.ktor.experimental.circuitbreaker.*
+import io.ktor.experimental.client.redis.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.server.engine.*
@@ -11,6 +12,16 @@ class CircuitBreakerTest {
     companion object Spike {
         @JvmStatic fun main(args: Array<String>) {
             embeddedServer(Netty, port = 8080) {
+                val redis = Redis()
+
+                install(CircuitBreaker) {
+                    service("redis") {
+                        // We can also introspect monitoring services, number of connections, etc.
+                        redis.get("/") // It would fail if redis service is not available.
+                        true
+                    }
+                }
+
                 routing {
                     routeTimeout(4, TimeUnit.SECONDS) {
                         get("/") {
