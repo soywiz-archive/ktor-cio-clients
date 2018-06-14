@@ -18,25 +18,13 @@ class CircuitBreaker private constructor(pipeline: ApplicationCallPipeline) {
      *
      * [timeout] would
      */
-    class Service(
+    class Service<T>(
         val name: String,
-        val timeout: Long = 15,
-        val timeoutUnit: TimeUnit = TimeUnit.SECONDS,
-        val checkStatus: suspend () -> Boolean
-    )
-
-    class Configuration {
-        internal val services = LinkedHashMap<String, Service>()
-
-        /**
-         * Registers a CircuitBreaker [Service].
-         */
-        fun register(service: Service) {
-            services[service.name] = service
-        }
-    }
-
-    class ServiceStatus(val service: Service) {
+        val instance: T,
+        val timeout: Long,
+        val timeoutUnit: TimeUnit,
+        val checkStatus: suspend (T) -> Boolean
+    ) {
         var isAvailable = true; private set
 
         fun markAsUnavailable() {
@@ -45,8 +33,13 @@ class CircuitBreaker private constructor(pipeline: ApplicationCallPipeline) {
                     isAvailable = false
                     launch {
                         while (true) {
-                            delay(service.timeout)
-                            if (try { service.checkStatus() } catch (e: Throwable) { e.printStackTrace(); false }) {
+                            delay(timeout)
+                            if (try {
+                                    checkStatus(instance)
+                                } catch (e: Throwable) {
+                                    e.printStackTrace(); false
+                                }
+                            ) {
                                 isAvailable = true
                                 break
                             }
@@ -57,20 +50,18 @@ class CircuitBreaker private constructor(pipeline: ApplicationCallPipeline) {
         }
     }
 
-    val serviceStatusMap = LinkedHashMap<Service, ServiceStatus>()
-    val Service.status: ServiceStatus get() = serviceStatusMap.getOrPut(this) { ServiceStatus(this) }
+    class Configuration
 
-    suspend fun <T> wrap(service: Service, block: suspend () -> T): T {
-        val serviceStatus = service.status
-        if (!serviceStatus.isAvailable) {
+    suspend fun <T, T2> wrap(service: Service<T2>, block: suspend (T2) -> T): T {
+        if (!service.isAvailable) {
             throw ServiceNotAvailableException(service)
         }
         return try {
             withTimeout(service.timeout, service.timeoutUnit) {
-                block()
+                block(service.instance)
             }
         } catch (e: TimeoutCancellationException) {
-            serviceStatus.markAsUnavailable()
+            service.markAsUnavailable()
             throw ServiceNotAvailableException(service)
         }
     }
@@ -85,12 +76,20 @@ class CircuitBreaker private constructor(pipeline: ApplicationCallPipeline) {
     }
 }
 
-class ServiceNotAvailableException(val service: CircuitBreaker.Service) :
+class ServiceNotAvailableException(val service: CircuitBreaker.Service<*>) :
     RuntimeException("Service ${service.name} not available")
 
+val Application.circuitBreaker: CircuitBreaker get() = this.featureOrNull(CircuitBreaker) ?: this.install(CircuitBreaker)
 val ApplicationCall.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
-val PipelineContext<Unit, ApplicationCall>.circuitBreaker: CircuitBreaker get() = this.application.feature(CircuitBreaker)
-suspend fun <T> PipelineContext<Unit, ApplicationCall>.withService(service: CircuitBreaker.Service, callback: suspend () -> T) = this.circuitBreaker.wrap(service, callback)
+val PipelineContext<Unit, ApplicationCall>.circuitBreaker: CircuitBreaker
+    get() = this.application.feature(
+        CircuitBreaker
+    )
+
+suspend fun <T, T2> PipelineContext<Unit, ApplicationCall>.withService(
+    service: CircuitBreaker.Service<T2>,
+    callback: suspend (T2) -> T
+) = this.circuitBreaker.wrap(service, callback)
 
 fun Route.routeTimeout(time: Long, unit: TimeUnit = TimeUnit.SECONDS, callback: Route.() -> Unit): Route {
     val routeWithTimeout = createChild(object : RouteSelector(1.0) {
