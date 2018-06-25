@@ -6,8 +6,9 @@ import java.util.concurrent.atomic.*
 import kotlin.coroutines.experimental.*
 
 class AsyncQueue {
-    var running = AtomicBoolean(false); private set
-    private var queue = LinkedList<suspend () -> Unit>()
+    val running = AtomicBoolean(false)
+
+    private val queue = LinkedList<suspend () -> Unit>()
 
     val queued get() = synchronized(queue) { queue.size }
 

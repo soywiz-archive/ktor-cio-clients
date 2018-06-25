@@ -6,6 +6,7 @@ import io.ktor.experimental.client.util.sync.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.util.*
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.coroutines.experimental.time.*
@@ -23,7 +24,7 @@ import javax.management.*
 // https://www.postgresql.org/docs/9.3/static/protocol-flow.html
 // https://www.postgresql.org/docs/9.2/static/datatype-oid.html
 
-interface PostgreClient : DbClient {
+interface PostgreClient : DBClient {
     val notices: Signal<PostgreException>
 }
 
@@ -57,6 +58,8 @@ internal class InternalPostgreClient(
     val config: PostgresConfig,
     val connector: suspend () -> DbClientConnection
 ) : PostgreClient, WithProperties by WithProperties.Mixin() {
+    override val context: Job = Job()
+
     override val notices = Signal<PostgreException>()
     val logger = LoggerFactory.getLogger("postgre")
 
@@ -65,7 +68,7 @@ internal class InternalPostgreClient(
     var processSecretKey = 0
     var errorCount = 0
 
-    private val context = DbRowSetContext()
+    private val rowContext= DbRowSetContext()
     internal val queryQueue = AsyncQueue()
     var preconnectionTime: Date? = null
     var connectionTime: Date? = null
@@ -337,8 +340,8 @@ internal class InternalPostgreClient(
         return CONTINUE
     }
 
-    override suspend fun close(): Unit {
-        this.close.close()
+    override fun close(): Unit {
+        close.close()
     }
 }
 

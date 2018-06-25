@@ -4,7 +4,7 @@ import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.util.*
 import kotlin.reflect.*
 
-suspend fun <T : Any> DbClient.insert(clazz: KClass<T>, item: T): Long {
+suspend fun <T : Any> DBClient.insert(clazz: KClass<T>, item: T): Long {
     val info = tablesInfo.get(clazz)
     val map = info.toMap(item, skipSerials = true)
     val keys = map.keys
@@ -24,4 +24,4 @@ suspend fun <T : Any> DbClient.insert(clazz: KClass<T>, item: T): Long {
     return results.firstOrNull()?.firstOrNull().convertTo(Long::class) ?: 0L
 }
 
-suspend inline fun <reified T : Any> DbClient.insert(item: T) = insert(T::class, item)
+suspend inline fun <reified T : Any> DBClient.insert(item: T) = insert(T::class, item)

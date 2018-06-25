@@ -324,14 +324,12 @@ class Cassandra private constructor(
     }
 
     val channels = ArrayList<Channel>()
-    private val availableChannels = AsyncPool {
-        synchronized(this) {
-            Channel(channels.size).apply { channels += this }
-        }
-    }
+    private val availableChannels = AsyncPool(factory = ObjectFactory {
+        Channel(channels.size).apply { channels += this }
+    })
 
     suspend fun init() {
-        availableChannels.alloc()
+        availableChannels.borrow()
         sendStartup()
         while (true) {
             val packet = Packet.read(reader)
@@ -357,11 +355,7 @@ class Cassandra private constructor(
         }
     }
 
-    private suspend fun <T> allocStream(callback: suspend (Channel) -> T): T {
-        return availableChannels.allocSuspend {
-            callback(it)
-        }
-    }
+    private suspend fun <T> allocStream(callback: suspend (Channel) -> T): T = availableChannels.use { callback(it) }
 
     suspend fun createKeyspace(
         namespace: String,
@@ -595,15 +589,6 @@ private fun ByteArrayOutputStream.writeCassandraStringMultiMap(map: Map<String, 
     for ((k, v) in map) {
         this.writeCassandraString(k)
         this.writeCassandraStringList(v)
-    }
-}
-
-private suspend fun <T, T2> AsyncPool<T>.allocSuspend(callback: suspend (T) -> T2): T2 {
-    val temp = alloc()
-    try {
-        return callback(temp)
-    } finally {
-        free(temp)
     }
 }
 

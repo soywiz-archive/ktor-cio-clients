@@ -5,26 +5,26 @@ import kotlin.reflect.*
 
 
 interface Where {
-    fun render(db: DbClient): String
+    fun render(db: DBClient): String
 
     object ALWAYS : Where {
-        override fun render(db: DbClient): String = ""
+        override fun render(db: DBClient): String = ""
     }
 
     class BINARY<T : Any, R>(val klazz: KClass<T>, val prop: KProperty1<T, R>, val op: String, val cst: R) :
         Where {
-        override fun render(db: DbClient): String =
+        override fun render(db: DBClient): String =
             "(" + db.quoteColumn(db.tablesInfo.get(klazz).getColumn(prop).name) + " $op " + db.quoteConstant(cst) + ")"
     }
 
     class BINARY_EXPR(val left: Where, val op: String, val right: Where) :
         Where {
-        override fun render(db: DbClient): String = "(${left.render(db)} $op ${right.render(db)})"
+        override fun render(db: DBClient): String = "(${left.render(db)} $op ${right.render(db)})"
     }
 
     class UNARY(val op: String, val right: Where) :
         Where {
-        override fun render(db: DbClient): String = "($op ${right.render(db)})"
+        override fun render(db: DBClient): String = "($op ${right.render(db)})"
     }
 
     object Builder {

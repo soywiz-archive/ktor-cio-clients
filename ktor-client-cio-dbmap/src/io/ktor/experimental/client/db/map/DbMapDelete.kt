@@ -5,7 +5,7 @@ import io.ktor.experimental.client.util.*
 import kotlin.reflect.*
 
 
-suspend fun <T : Any> DbClient.delete(
+suspend fun <T : Any> DBClient.delete(
     clazz: KClass<T>,
     item: T? = null,
     where: Where.Builder.() -> Where? = { null }
@@ -33,7 +33,7 @@ suspend fun <T : Any> DbClient.delete(
     return results.firstOrNull()?.firstOrNull().convertTo(Long::class) ?: 0L
 }
 
-suspend inline fun <reified T : Any> DbClient.delete(
+suspend inline fun <reified T : Any> DBClient.delete(
     item: T? = null,
     noinline where: Where.Builder.() -> Where? = { null }
 ) = delete(T::class, item, where = where)

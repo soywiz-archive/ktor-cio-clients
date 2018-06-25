@@ -7,6 +7,7 @@ import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.sockets.Socket
 import io.ktor.network.util.*
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.ByteOrder
 import java.io.*
@@ -54,9 +55,6 @@ class MysqlException(val errorCode: Int, val sqlState: String, message: String) 
     override fun toString(): String = "MysqlException($errorCode, '$sqlState', '$message')"
 }
 
-interface Mysql : DbClient {
-}
-
 // https://dev.mysql.com/doc/refman/5.7/en/string-literals.html#character-escape-sequences
 fun String.mysqlEscape(): String {
     var out = ""
@@ -80,65 +78,35 @@ fun String.mysqlEscape(): String {
     return out
 }
 
-fun String.mysqlQuote(): String = "'${this.mysqlEscape()}'"
-fun String.mysqlTableQuote(): String = "`${this.mysqlEscape()}`"
+fun String.mysqlQuote(): String = "'${mysqlEscape()}'"
+fun String.mysqlTableQuote(): String = "`${mysqlEscape()}`"
 
-suspend fun Mysql.useDatabase(name: String) = query("USE ${name.mysqlTableQuote()};")
+suspend fun MySQLClient.useDatabase(name: String) = query("USE ${name.mysqlTableQuote()};")
 
-fun Mysql(
+fun MySQLClient(
     host: String = "127.0.0.1",
     port: Int = 3306,
     user: String = "root",
     password: String = "",
     database: String? = null
-): Mysql {
-    return MysqlClientLazy(host, port, user, password, database)
-}
+): MySQLClient = MySQLClient(host, port, user, password, database)
 
+suspend fun ByteReadChannel.readBytesExact(count: Int): ByteArray = ByteArray(count).also { readFully(it) }
 
-class MysqlClientMulti : Mysql, WithProperties by WithProperties.Mixin() {
-    override suspend fun query(query: String): DbRowSet = TODO()
-    override suspend fun close() = TODO()
-}
-
-class MysqlClientLazy(
-    val host: String = "127.0.0.1",
-    val port: Int = 3306,
-    val user: String = "root",
-    val password: String = "",
-    val database: String? = null
-) : Mysql, WithProperties by WithProperties.Mixin() {
-    private var client: Mysql? = null
-
-    private suspend fun initOnce(): Mysql {
-        if (client == null) {
-            client = MysqlClient(host, port, user, password, database)
-        }
-        return client!!
-    }
-
-    override suspend fun query(query: String): DbRowSet = initOnce().query(query)
-    override suspend fun close(): Unit = initOnce().close()
-}
-
-suspend fun ByteReadChannel.readBytesExact(count: Int): ByteArray {
-    val out = ByteArray(count)
-    readFully(out)
-    return out
-}
-
-// Mysql protocol, compatible with MariaDB, Sphinx...
+// MySQL protocol, compatible with MariaDB, Sphinx...
 // Reference: https://mariadb.com/kb/en/library/clientserver-protocol/
 // Reference: https://github.com/mysqljs/mysql/blob/master/lib/protocol/packets/HandshakeInitializationPacket.js
 // Used wireshark on loopback + mysql -u root -h 127.0.0.1 --ssl-mode=DISABLED for debugging
-class MysqlClient private constructor(
+class MySQLClient private constructor(
     private val read: ByteReadChannel,
     private val write: ByteWriteChannel,
     private val close: Closeable
-) : Mysql, WithProperties by WithProperties.Mixin() {
+) : DBClient, WithProperties by WithProperties.Mixin() {
+    override val context: Job = Job()
+
     private val charset = Charsets.UTF_8
 
-    private val context by lazy {
+    private val rowSetContext by lazy {
         DbRowSetContext(
             charset = charset,
             timeFormat = TIME_FORMAT,
@@ -148,27 +116,22 @@ class MysqlClient private constructor(
     }
 
     companion object {
-        suspend operator fun invoke(
-            read: ByteReadChannel,
-            write: ByteWriteChannel,
+        operator fun invoke(
+            input: ByteReadChannel,
+            output: ByteWriteChannel,
             close: Closeable,
-
             user: String = "root",
             password: String = "",
             database: String? = null
-        ): MysqlClient {
-            return MysqlClient(read, write, close).apply {
-                init(user, password, database)
-            }
-        }
+        ): MySQLClient = MySQLClient(input, output, close, user, password, database)
 
-        suspend operator fun invoke(
+        operator fun invoke(
             //client: AsyncClient,
             client: Socket,
             user: String = "root",
             password: String = "",
             database: String? = null
-        ): MysqlClient {
+        ): MySQLClient {
             return invoke(
                 client.openReadChannel().apply { readByteOrder = ByteOrder.LITTLE_ENDIAN },
                 client.openWriteChannel(autoFlush = true).apply { writeByteOrder = ByteOrder.LITTLE_ENDIAN },
@@ -179,20 +142,11 @@ class MysqlClient private constructor(
             )
         }
 
-        suspend operator fun invoke(
-            host: String = "127.0.0.1",
-            port: Int = 3306,
-            user: String = "root",
-            password: String = "",
+        operator suspend fun invoke(
+            host: String = "127.0.0.1", port: Int = 3306,
+            user: String = "root", password: String = "",
             database: String? = null
-        ): MysqlClient {
-            //return invoke(AsyncClient().connect(host, port), user, password, database)
-            return invoke(
-                aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(
-                    InetSocketAddress(host, port)
-                ), user, password, database
-            )
-        }
+        ): MySQLClient = invoke(aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port)), user, password, database)
 
         private val TIME_FORMAT = SimpleDateFormat("HH:mm:ss")
         private val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd")
@@ -221,16 +175,12 @@ class MysqlClient private constructor(
     }
 
     private suspend inline fun writePacket(number: Int = packetNum++, builder: ByteArrayOutputStream.() -> Unit) {
-        writePacket(
-            Packet(
-                number,
-                MemorySyncStreamToByteArray { builder() })
-        )
+        writePacket(Packet(number, MemorySyncStreamToByteArray { builder() }))
     }
 
     private suspend inline fun <T> readPacket(builder: ByteArrayInputStream.(Packet) -> T): T {
         val packet = readPacket()
-        this.packetNum = packet.number + 1
+        packetNum = packet.number + 1
         return builder(packet.content.openSync(), packet)
     }
 
@@ -385,7 +335,7 @@ class MysqlClient private constructor(
                 val warningCount = readU16_le()
                 val info = readBytesAvailable()
                 DbRowSet(
-                    DbColumns(listOf(), context),
+                    DbColumns(listOf(), rowSetContext),
                     listOf<DbRow>().toSuspendingSequence(),
                     DbRowSetInfo(query = query)
                 )
@@ -439,7 +389,7 @@ class MysqlClient private constructor(
                             unused = readS16_le()
                         )
                     }
-                }, context)
+                }, rowSetContext)
 
                 readPacket {
                     // EOF
@@ -517,14 +467,12 @@ class MysqlClient private constructor(
         return readResponse(query)
     }
 
-    override suspend fun close() {
+    override fun close() {
         packetNum = 0
-        try {
+        launch(parent = context) {
             writeQuit()
-        } catch (e: Throwable) {
-
+            close()
         }
-        close.close()
     }
 
     fun InputStream.readLenencSmall(): Int {
@@ -579,12 +527,9 @@ class MysqlClient private constructor(
 
 data class MysqlColumn(
     override val index: Int,
-    val catalog: String,
-    val schema: String,
-    val tableAlias: String,
-    val table: String,
-    val columnAlias: String,
-    val column: String,
+    val catalog: String, val schema: String,
+    val tableAlias: String, val table: String,
+    val columnAlias: String, val column: String,
     val lenFixedFields: Long,
     val characterSet: Int,
     val maxColumnSize: Int,

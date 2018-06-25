@@ -4,7 +4,7 @@ import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.util.*
 import kotlin.reflect.*
 
-suspend fun <T : Any> DbClient.update(
+suspend fun <T : Any> DBClient.update(
     clazz: KClass<T>,
     item: T? = null,
     fields: List<KProperty1<T, *>>? = null,
@@ -55,7 +55,7 @@ suspend fun <T : Any> DbClient.update(
     return results.firstOrNull()?.firstOrNull().convertTo(Long::class) ?: 0L
 }
 
-suspend inline fun <reified T : Any> DbClient.update(
+suspend inline fun <reified T : Any> DBClient.update(
     item: T? = null,
     fields: List<KProperty1<T, *>>? = null,
     sets: List<Pair<KProperty1<T, *>, Any>>? = null,
