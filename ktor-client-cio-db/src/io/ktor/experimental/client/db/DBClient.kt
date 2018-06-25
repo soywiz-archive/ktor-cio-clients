@@ -1,6 +1,7 @@
 package io.ktor.experimental.client.db
 
 import io.ktor.experimental.client.util.*
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import java.io.*
 import java.nio.charset.*
@@ -8,14 +9,19 @@ import java.text.*
 import java.time.*
 import java.util.*
 
-interface DbClient : AsyncCloseable, WithProperties {
+interface DBClient : WithProperties, Closeable {
+    /**
+     * Execution context. Use it to cancel tasks or force shutdown
+     */
+    val context: Job
+
     suspend fun query(query: String): DbRowSet
 
     suspend fun transactionStart(): Unit = run { query("START TRANSACTION;") }
     suspend fun transactionRollback(): Unit = run { query("ROLLBACK TRANSACTION;") }
     suspend fun transactionCommit(): Unit = run { query("COMMIT TRANSACTION;") }
 
-    suspend fun transaction(callback: suspend DbClient.(DbClient) -> Unit) {
+    suspend fun transaction(callback: suspend DBClient.(DBClient) -> Unit) {
         transactionStart()
         try {
             callback(this)
@@ -146,14 +152,14 @@ class DbRowSet(
     val info: DbRowSetInfo
 ) : SuspendingSequence<DbRow> by rows
 
-fun DbClient.withInfoHook(handler: DbQueryInfo.() -> Unit): DbClientWithStats =
-    DbClientWithStats(this, handler)
+fun DBClient.withInfoHook(handler: DbQueryInfo.() -> Unit): DBClientWithStats =
+    DBClientWithStats(this, handler)
 
 data class DbQueryInfo(val query: String, val duration: Duration, val error: Throwable?) {
     var info: DbRowSetInfo? = null
 }
 
-class DbClientWithStats(val client: DbClient, val handler: (info: DbQueryInfo) -> Unit) : DbClient by client {
+class DBClientWithStats(val client: DBClient, val handler: (info: DbQueryInfo) -> Unit) : DBClient by client {
     override suspend fun query(query: String): DbRowSet {
         var error: Throwable? = null
         var info: DbRowSetInfo? = null

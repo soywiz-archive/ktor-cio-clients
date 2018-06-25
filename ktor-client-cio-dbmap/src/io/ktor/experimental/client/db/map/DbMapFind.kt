@@ -6,7 +6,7 @@ import kotlin.reflect.*
 
 @PublishedApi
 internal fun <T : Any> buildFindQuery(
-    db: DbClient,
+    db: DBClient,
     clazz: KClass<T>,
     limit: Int? = null,
     orderBy: OrderSpec<T>? = null,
@@ -28,7 +28,7 @@ internal fun <T : Any> buildFindQuery(
     return query
 }
 
-suspend fun <T : Any> DbClient.find(
+suspend fun <T : Any> DBClient.find(
     clazz: KClass<T>,
     limit: Int? = null,
     orderBy: OrderSpec<T>? = null,
@@ -41,14 +41,14 @@ suspend fun <T : Any> DbClient.find(
     return query("$query;").map { info.toItem(it) }
 }
 
-suspend inline fun <reified T : Any> DbClient.find(
+suspend inline fun <reified T : Any> DBClient.find(
     limit: Int? = null,
     orderBy: OrderSpec<T>? = null,
     fields: List<KProperty1<T, *>>? = null,
     noinline where: Where.Builder.() -> Where = { Where.ALWAYS }
 ): SuspendingSequence<T> = find(T::class, limit = limit, orderBy = orderBy, fields = fields, where = where)
 
-suspend inline fun <reified T : Any> DbClient.count(
+suspend inline fun <reified T : Any> DBClient.count(
     limit: Int? = null,
     noinline where: Where.Builder.() -> Where = { Where.ALWAYS }
 ): Long {
@@ -62,7 +62,7 @@ suspend inline fun <reified T : Any> DbClient.count(
     ).first().first()?.toString()?.toLongOrNull() ?: 0L
 }
 
-suspend inline fun <reified T : Any> DbClient.first(
+suspend inline fun <reified T : Any> DBClient.first(
     orderBy: OrderSpec<T>? = null,
     fields: List<KProperty1<T, *>>? = null,
     noinline where: Where.Builder.() -> Where = { Where.ALWAYS }

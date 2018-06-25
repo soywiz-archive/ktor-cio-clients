@@ -1,6 +1,8 @@
 package io.ktor.experimental.client.mongodb
 
 import io.ktor.experimental.client.mongodb.bson.*
+import io.ktor.experimental.client.mongodb.db.*
+import io.ktor.experimental.client.mongodb.util.*
 import io.ktor.experimental.client.util.*
 
 class MongoDBDatabase(val mongo: MongoDB, val db: String)
@@ -22,7 +24,7 @@ fun MongoDBDatabase.collection(collection: String): MongoDBCollection = this[col
 suspend inline fun MongoDBDatabase.runCommand(
     numberToSkip: Int = 0, numberToReturn: Int = 1,
     mapGen: MutableMap<String, Any?>.() -> Unit
-): MongoDB.Reply = mongo.runCommand(
+): Reply = mongo.runCommand(
     db,
     mongoMap(mapGen), numberToSkip, numberToReturn
 )
@@ -44,7 +46,7 @@ suspend inline fun MongoDBDatabase.runCommand(
     "version" to "17.5.0"
 )
 */
-suspend fun MongoDB.isMaster(): MongoDB.Reply = runCommand("admin") { putNotNull("isMaster", true) }
+suspend fun MongoDB.isMaster(): Reply = runCommand("admin") { putNotNull("isMaster", true) }
 
 suspend fun MongoDBCollection.listIndexes(): List<MongoDBIndex> {
     val result = db.runCommand { putNotNull("listIndexes", collection) }
@@ -75,16 +77,13 @@ suspend fun MongoDBCollection.insert(
     ordered: Boolean? = null,
     writeConcern: BsonDocument? = null,
     bypassDocumentValidation: Boolean? = null
-): MongoDB.Reply {
-    val result = db.runCommand {
-        putNotNull("insert", collection)
-        putNotNull("documents", documents.toList())
-        putNotNull("ordered", ordered)
-        putNotNull("writeConcern", writeConcern)
-        putNotNull("bypassDocumentValidation", bypassDocumentValidation)
-    }.checkErrors()
-    return result
-}
+): Reply = db.runCommand {
+    putNotNull("insert", collection)
+    putNotNull("documents", documents.toList())
+    putNotNull("ordered", ordered)
+    putNotNull("writeConcern", writeConcern)
+    putNotNull("bypassDocumentValidation", bypassDocumentValidation)
+}.checkErrors()
 
 /**
  * Example: mongo.eval("admin", "function() { return {a: 10}; }")
@@ -174,16 +173,12 @@ suspend fun MongoDBCollection.aggregate(
     vararg pipeline: BsonDocument,
     explain: Boolean? = null,
     allowDiskUse: Boolean? = null
-): MongoDB.Reply {
-    val result = db.runCommand {
-        putNotNull("aggregate", collection)
-        //println(pipeline.toList())
-        putNotNull("pipeline", pipeline)
-        putNotNull("explain", explain)
-        putNotNull("allowDiskUse", allowDiskUse)
-    }
-    //println(result)
-    return result
+): Reply = db.runCommand {
+    putNotNull("aggregate", collection)
+    //println(pipeline.toList())
+    putNotNull("pipeline", pipeline)
+    putNotNull("explain", explain)
+    putNotNull("allowDiskUse", allowDiskUse)
 }
 
 data class MongoUpdate(

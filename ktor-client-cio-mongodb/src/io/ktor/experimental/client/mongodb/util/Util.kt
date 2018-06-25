@@ -1,5 +1,6 @@
 package io.ktor.experimental.client.mongodb.util
 
+import io.ktor.experimental.client.mongodb.bson.*
 import kotlinx.io.core.*
 
 fun ByteReadPacket(data: ByteArray, byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN): ByteReadPacket =
@@ -50,3 +51,17 @@ fun BytePacketBuilder.writePacketWithIntLength(
 fun ByteReadPacket.readPacket(count: Int = remaining, order: ByteOrder = ByteOrder.BIG_ENDIAN): ByteReadPacket {
     return readBytes(count).asReadPacket(order)
 }
+
+fun <K, V> mapOfNotNull(vararg pairs: Pair<K, V>): Map<K, V> {
+    val out = LinkedHashMap<K, V>()
+    for ((k, v) in pairs) if (v != null) out[k] = v
+    return out
+}
+
+fun <K, V> MutableMap<K, V>.putNotNull(key: K, value: V) {
+    if (value != null) put(key, value)
+}
+
+inline fun mongoMap(callback: MutableMap<String, Any?>.() -> Unit): BsonDocument =
+    LinkedHashMap<String, Any?>().apply(callback)
+

@@ -8,7 +8,7 @@ import java.nio.*
 import java.nio.charset.*
 
 suspend fun ByteReadChannel.readBytesExact(count: Int): ByteArray {
-    val packet = this.readPacket(count)
+    val packet = readPacket(count)
     if (packet.remaining != count) error("Couldn't read exact bytes $count")
     return packet.readBytes(count)
 }
@@ -19,15 +19,13 @@ suspend fun ByteReadChannel.readUntilString(
     charset: Charset,
     bufferSize: Int = 1024,
     expectedMinSize: Int = 16
-): String {
-    return readUntilString(
-        out = StringBuilder(expectedMinSize),
-        delimiter = ByteBuffer.wrap(byteArrayOf(delimiter)),
-        decoder = charset.newDecoder(),
-        charBuffer = CharBuffer.allocate(bufferSize),
-        buffer = ByteBuffer.allocate(bufferSize)
-    ).toString()
-}
+): String = readUntilString(
+    out = StringBuilder(expectedMinSize),
+    delimiter = ByteBuffer.wrap(byteArrayOf(delimiter)),
+    decoder = charset.newDecoder(),
+    charBuffer = CharBuffer.allocate(bufferSize),
+    buffer = ByteBuffer.allocate(bufferSize)
+).toString()
 
 // Allocation free version
 suspend fun ByteReadChannel.readUntilString(

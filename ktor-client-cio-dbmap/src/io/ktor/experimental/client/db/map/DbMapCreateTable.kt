@@ -3,9 +3,9 @@ package io.ktor.experimental.client.db.map
 import io.ktor.experimental.client.db.*
 import kotlin.reflect.*
 
-suspend inline fun <reified T> DbClient.createTable() = createTable(T::class)
+suspend inline fun <reified T> DBClient.createTable() = createTable(T::class)
 
-suspend fun DbClient.createTable(clazz: KClass<*>) {
+suspend fun DBClient.createTable(clazz: KClass<*>) {
     val info = tablesInfo.get(clazz)
     val columnParts = arrayListOf<String>()
     for (column in info.columns) {

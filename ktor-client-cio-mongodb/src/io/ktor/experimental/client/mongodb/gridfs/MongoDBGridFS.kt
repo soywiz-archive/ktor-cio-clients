@@ -2,6 +2,7 @@ package io.ktor.experimental.client.mongodb.gridfs
 
 import io.ktor.experimental.client.mongodb.*
 import io.ktor.experimental.client.mongodb.bson.*
+import io.ktor.experimental.client.mongodb.util.*
 import io.ktor.experimental.client.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*

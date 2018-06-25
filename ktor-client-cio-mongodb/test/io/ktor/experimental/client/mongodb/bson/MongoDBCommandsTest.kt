@@ -2,6 +2,7 @@ package io.ktor.experimental.client.mongodb.bson
 
 import com.fasterxml.jackson.module.kotlin.*
 import io.ktor.experimental.client.mongodb.*
+import io.ktor.experimental.client.mongodb.db.*
 import kotlinx.coroutines.experimental.*
 import org.junit.*
 import kotlin.test.*
@@ -17,10 +18,10 @@ class MongoDBCommandsTest {
             payload: BsonDocument,
             numberToSkip: Int,
             numberToReturn: Int
-        ): MongoDB.Reply {
+        ): Reply {
             log += "$db:" + payload.toJson()
-            return MongoDB.Reply(
-                MongoDB.Packet(0, 0, 0, byteArrayOf()), 0, 0L, 0,
+            return Reply(
+                Packet(0, 0, 0, byteArrayOf()), 0, 0L, 0,
                 listOf(mapOf("cursor" to mapOf("firstBatch" to listOf<BsonDocument>())))
             )
         }

@@ -1,57 +1,48 @@
 package io.ktor.experimental.client.util
 
-import kotlinx.coroutines.experimental.*
-import java.util.*
+import kotlinx.coroutines.experimental.channels.*
 import java.util.concurrent.atomic.*
 
-class AsyncPool<T>(val maxItems: Int = Int.MAX_VALUE, val create: suspend (index: Int) -> T) {
-    var createdItems = AtomicInteger()
-    private val freedItem = LinkedList<T>()
-    private val waiters = LinkedList<CompletableDeferred<Unit>>()
-    val availableFreed: Int get() = synchronized(freedItem) { freedItem.size }
+const val ASYNC_POOL_DEFAULT_CAPACITY = 4096
 
-    suspend fun <TR> tempAlloc(callback: suspend (T) -> TR): TR {
-        val item = alloc()
-        try {
-            return callback(item)
-        } finally {
-            free(item)
-        }
-    }
+class AsyncPool<T : Any>(
+    val capacity: Int = ASYNC_POOL_DEFAULT_CAPACITY,
+    private val factory: ObjectFactory<T>
+) {
+    private val items: Channel<T> = Channel()
 
-    suspend fun alloc(): T {
+    private val created = AtomicInteger(0)
+    private val closed = AtomicBoolean(false)
+
+    suspend fun borrow(): T {
+        if (closed.get()) error("Pool closed")
+
+        items.receiveOrNull()?.let { return it }
+
         while (true) {
-            // If we have an available item just retrieve it
-            synchronized(freedItem) {
-                if (freedItem.isNotEmpty()) {
-                    val item = freedItem.remove()
-                    if (item != null) {
-                        return item
-                    }
-                }
-            }
+            val current = created.get()
+            if (current >= capacity) break
 
-            // If we don't have an available item yet and we can create more, just create one
-            if (createdItems.get() < maxItems) {
-                val index = createdItems.getAndAdd(1)
-                return create(index)
-            }
-            // If we shouldn't create more items and we don't have more, just await for one to be freed.
-            else {
-                val deferred = CompletableDeferred<Unit>()
-                synchronized(waiters) {
-                    waiters += deferred
-                }
-                deferred.await()
-            }
+            if (!created.compareAndSet(current, current + 1)) continue
+
+            return factory.create()
         }
+
+        return items.receive()
     }
 
-    fun free(item: T) {
-        synchronized(freedItem) {
-            freedItem.add(item)
-        }
-        val waiter = synchronized(waiters) { if (waiters.isNotEmpty()) waiters.remove() else null }
-        waiter?.complete(Unit)
+    fun dispose(item: T) {
+        if (!items.offer(item)) throw PoolOverflowException(item)
+    }
+}
+
+class PoolOverflowException(item: Any) : IllegalStateException("Failed to return item to pool: $item")
+
+suspend fun <T : Any, R> AsyncPool<T>.use(callback: suspend (T) -> R): R {
+    val item = borrow()
+    try {
+        return callback(item)
+    } finally {
+        dispose(item)
     }
 }

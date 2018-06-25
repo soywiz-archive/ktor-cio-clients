@@ -49,7 +49,7 @@ fun <T : Any> Any?.convertTo(to: KClass<T>): T? {
     return convertStringToUnsafe(this.toString(), to) as? T?
 }
 
-class TableInfo<T : Any>(val db: DbClient, val klazz: KClass<T>) {
+class TableInfo<T : Any>(val db: DBClient, val klazz: KClass<T>) {
     val clazz = klazz.java
     private val annotationTableName = klazz.findAnnotation<Name>()
     val tableName: String get() = annotationTableName?.name ?: klazz.simpleName ?: "unknown"
@@ -118,7 +118,7 @@ class TableInfo<T : Any>(val db: DbClient, val klazz: KClass<T>) {
 }
 
 @Suppress("UNCHECKED_CAST")
-class TablesInfo(val db: DbClient) {
+class TablesInfo(val db: DBClient) {
     val infos = hashMapOf<KClass<*>, TableInfo<*>>()
     fun <T : Any> get(clazz: KClass<T>): TableInfo<T> = infos.getOrPut(clazz) {
         TableInfo(
@@ -128,7 +128,7 @@ class TablesInfo(val db: DbClient) {
     } as TableInfo<T>
 }
 
-val DbClient.tablesInfo: TablesInfo by property {
+val DBClient.tablesInfo: TablesInfo by property {
     TablesInfo(
         this
     )

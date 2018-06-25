@@ -8,14 +8,13 @@ import io.ktor.routing.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.experimental.*
-import java.net.*
 import java.util.concurrent.*
 
 class CircuitBreakerTest {
     companion object Spike {
-        val RedisService: CircuitBreaker.Service<RedisClient> = CircuitBreaker.Service(
+        val RedisService = CircuitBreaker.Service(
             "redis",
-            RedisClient(InetSocketAddress("127.0.0.1", 6379)),
+            RedisClient(maxConnections = 1),
             timeout = 5,
             timeoutUnit = TimeUnit.SECONDS
         ) { redis ->
@@ -28,15 +27,15 @@ class CircuitBreakerTest {
         val PipelineContext<Unit, ApplicationCall>.redisWrapped: Redis
             get() {
                 return object : Redis {
-                    override val context: Job = Job()
-
-                    override fun close() {
-                    }
+                    override val context: Job = RedisService.instance.context
 
                     override suspend fun execute(vararg args: Any?): Any? = withService(RedisService) { service ->
-                        service.execute(*args)
+                        service.execute(args)
                     }
 
+                    override fun close() {
+                        RedisService.instance.close()
+                    }
                 }
             }
 

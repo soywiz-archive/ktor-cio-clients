@@ -3,8 +3,8 @@ package io.ktor.experimental.client.mongodb
 import io.ktor.experimental.client.mongodb.bson.*
 import io.ktor.experimental.client.mongodb.bson.Bson.writeBsonCString
 import io.ktor.experimental.client.mongodb.bson.Bson.writeBsonDocument
+import io.ktor.experimental.client.mongodb.db.*
 import io.ktor.experimental.client.mongodb.util.*
-import io.ktor.experimental.client.util.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.util.*
@@ -17,58 +17,18 @@ import java.net.*
 import java.util.concurrent.*
 
 // https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
-fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
-    return MongoDBClient {
-        val socket = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port))
-        MongoDBClient.Pipes(
-            read = socket.openReadChannel(),
-            write = socket.openWriteChannel(autoFlush = true),
-            close = Closeable { socket.close() }
-        )
-    }.apply {
-        start()
-    }
+fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB = MongoDBClient {
+    val socket = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port))
+    Pipes(
+        read = socket.openReadChannel(),
+        write = socket.openWriteChannel(autoFlush = true),
+        close = Closeable { socket.close() }
+    )
+}.apply {
+    start()
 }
 
 interface MongoDB {
-    class Packet(
-        val opcode: Int,
-        val requestId: Int,
-        val responseTo: Int,
-        val payload: ByteArray
-    ) {
-        override fun toString(): String =
-            "MongoPacket(opcode=$opcode, requestId=$requestId, responseTo=$responseTo, payload=SIZE(${payload.size}))"
-    }
-
-
-    data class Reply(
-        val packet: Packet,
-        val responseFlags: Int,
-        val cursorID: Long,
-        val startingFrom: Int,
-        val documents: List<BsonDocument>
-    ) {
-        val firstDocument get() = documents.first()
-        fun checkErrors() = this.apply {
-            val errmsg = firstDocument["errmsg"]?.toString()
-            val errcode = firstDocument["code"]?.toString()
-            if (errmsg != null) throw MongoDBException(
-                errmsg,
-                errcode?.toIntOrNull() ?: -1
-            )
-            val writeErrors = firstDocument["writeErrors"]
-            if (writeErrors != null) Dynamic {
-                throw MongoDBWriteException(writeErrors.list.map {
-                    MongoDBException(
-                        it["errmsg"].toString(),
-                        it["code"].toIntDefault(-1)
-                    )
-                })
-            }
-        }
-    }
-
     suspend fun runCommand(
         db: String, payload: BsonDocument,
         numberToSkip: Int = 0, numberToReturn: Int = 1
@@ -80,58 +40,33 @@ suspend inline fun MongoDB.runCommand(
     db: String,
     numberToSkip: Int = 0, numberToReturn: Int = 1,
     mapGen: MutableMap<String, Any?>.() -> Unit
-): MongoDB.Reply = runCommand(
+): Reply = runCommand(
     db,
     mongoMap(mapGen), numberToSkip, numberToReturn
 )
 
-class MongoDBClient(val pipesFactory: suspend () -> Pipes) :
-    MongoDB {
-    companion object {
-        private val MONGO_MSG_HEAD_SIZE = 4 * 4
-    }
+internal class Pipes(
+    val read: ByteReadChannel,
+    val write: ByteWriteChannel,
+    val close: Closeable
+)
 
+class MongoDBClient internal constructor(
+    private val dispatcher: CoroutineDispatcher = DefaultDispatcher,
+    private val pipesFactory: suspend () -> Pipes
+) : MongoDB {
+    private val deferreds = LinkedHashMap<Int, CompletableDeferred<Reply>>()
     private var lastRequestId: Int = 0
     private var _pipes: Pipes? = null
-    private val pipesQueue = AsyncQueue()
-    private val writeQueue = AsyncQueue()
 
-    suspend fun pipes(): Pipes = pipesQueue {
+    private suspend fun pipes(): Pipes = withContext(dispatcher) {
         if (_pipes == null) {
             _pipes = pipesFactory()
         }
         _pipes!!
     }
 
-    class Pipes(
-        val read: ByteReadChannel,
-        val write: ByteWriteChannel,
-        val close: Closeable
-    )
-
-    private suspend fun _readRawMongoPacket(): MongoDB.Packet {
-        val read = pipes().read
-        val head: ByteReadPacket = read.readPacket(MONGO_MSG_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
-        val messageLength = head.readInt()
-        val requestId = head.readInt()
-        val responseTo = head.readInt()
-        val opcode = head.readInt()
-        val payload = read.readPacket(messageLength - MONGO_MSG_HEAD_SIZE)
-        return MongoDB.Packet(opcode, requestId, responseTo, payload.readBytes())
-    }
-
     var readJob: Job? = null
-    suspend fun readJob(): Job {
-        return launch {
-            while (true) {
-                checkErrorAndReconnect {
-                    val response = _readParsedMongoPacket()
-                    val deferred = deferreds[response.packet.responseTo]
-                    deferred?.complete(response)
-                }
-            }
-        }
-    }
 
     fun start() {
         launch {
@@ -139,24 +74,33 @@ class MongoDBClient(val pipesFactory: suspend () -> Pipes) :
         }
     }
 
-    private suspend fun _readParsedMongoPacket(): MongoDB.Reply {
-        val packet = _readRawMongoPacket()
-        val pp = packet.payload.asReadPacket(ByteOrder.LITTLE_ENDIAN)
-        when (packet.opcode) {
-            MongoOps.OP_REPLY -> {
-                return pp.run {
+    override suspend fun runCommand(
+        db: String, payload: BsonDocument,
+        numberToSkip: Int, numberToReturn: Int
+    ): Reply = writeMongoOpQuery("$db.\$cmd", numberToSkip, numberToReturn, payload)
+
+    private suspend fun readJob(): Job = launch {
+        while (true) {
+            checkErrorAndReconnect {
+                val response = readParsedMongoPacket()
+                val deferred = deferreds[response.packet.responseTo]
+                deferred?.complete(response)
+            }
+        }
+    }
+
+    private suspend fun readParsedMongoPacket(): Reply {
+        val packet = readRawMongoPacket()
+        val payload = packet.payload.asReadPacket(ByteOrder.LITTLE_ENDIAN)
+        return when (packet.opcode) {
+            MongoDbOperations.OP_REPLY -> {
+                payload.run {
                     val responseFlags = readInt()
                     val cursorID = readLong()
                     val startingFrom = readInt()
                     val numberReturned = readInt()
                     val documents = (0 until numberReturned).map { Bson.read(this@run) }
-                    MongoDB.Reply(
-                        packet,
-                        responseFlags,
-                        cursorID,
-                        startingFrom,
-                        documents
-                    )
+                    Reply(packet, responseFlags, cursorID, startingFrom, documents)
                 }
             }
         //MongoOps.OP_MSG -> {
@@ -194,13 +138,13 @@ class MongoDBClient(val pipesFactory: suspend () -> Pipes) :
         }
     }
 
-    suspend fun writeRawMongoPacket(packet: MongoDB.Packet) = writeQueue {
+    private suspend fun writeRawMongoPacket(packet: Packet) = withContext(dispatcher) {
         checkErrorAndReconnect {
             val write = pipes().write
             write.writeByteOrder = ByteOrder.LITTLE_ENDIAN
             val packetBytes =
                 io.ktor.experimental.client.mongodb.util.buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
-                    writeInt(MONGO_MSG_HEAD_SIZE + packet.payload.size)
+                    writeInt(MONGO_MESSAGE_HEAD_SIZE + packet.payload.size)
                     writeInt(packet.requestId)
                     writeInt(packet.responseTo)
                     writeInt(packet.opcode)
@@ -212,21 +156,19 @@ class MongoDBClient(val pipesFactory: suspend () -> Pipes) :
         }
     }
 
-    private val deferreds = LinkedHashMap<Int, CompletableDeferred<MongoDB.Reply>>()
-
-    suspend fun writeMongoOpQuery(
+    private suspend fun writeMongoOpQuery(
         fullCollectionName: String,
         numberToSkip: Int,
         numberToReturn: Int,
         query: BsonDocument,
         returnFieldsSelector: BsonDocument? = null
-    ): MongoDB.Reply {
+    ): Reply {
         val requestId = lastRequestId++
-        val deferred = CompletableDeferred<MongoDB.Reply>()
+        val deferred = CompletableDeferred<Reply>()
         deferreds[requestId] = deferred
         writeRawMongoPacket(
-            MongoDB.Packet(
-                opcode = MongoOps.OP_QUERY,
+            Packet(
+                opcode = MongoDbOperations.OP_QUERY,
                 requestId = requestId,
                 responseTo = 0,
                 payload = io.ktor.experimental.client.mongodb.util.buildPacket(byteOrder = ByteOrder.LITTLE_ENDIAN) {
@@ -269,54 +211,18 @@ class MongoDBClient(val pipesFactory: suspend () -> Pipes) :
     //    writeRawMongoPacket(Packet(MongoOps.OP_MSG, lastRequestId++, 0, payload))
     //}
 
-    object MongoOps {
-        val OP_REPLY = 1
-        val OP_UPDATE = 2001
-        val OP_INSERT = 2002
-        val RESERVED = 2003
-        val OP_QUERY = 2004
-        val OP_GET_MORE = 2005
-        val OP_DELETE = 2006
-        val OP_KILL_CURSORS = 2007
-        val OP_COMMAND = 2010
-        val OP_COMMANDREPLY = 2011
-        val OP_MSG = 2013
+    private suspend fun readRawMongoPacket(): Packet {
+        val read = pipes().read
+        val head: ByteReadPacket = read.readPacket(MONGO_MESSAGE_HEAD_SIZE).withByteOrder(ByteOrder.LITTLE_ENDIAN)
+        val messageLength = head.readInt()
+        val requestId = head.readInt()
+        val responseTo = head.readInt()
+        val opcode = head.readInt()
+        val payload = read.readPacket(messageLength - MONGO_MESSAGE_HEAD_SIZE)
+        return Packet(opcode, requestId, responseTo, payload.readBytes())
     }
 
-    object QueryFlags {
-        val TAILABLE_CURSOR = (1 shl 1)
-        val SLAVE_OK = (1 shl 2)
-        val OP_LOG_REPLY = (1 shl 3)
-        val NO_CURSOR_TIMEOUT = (1 shl 4)
-        val AWAIT_DATA = (1 shl 5)
-        val EXHAUST = (1 shl 6)
-        val PARTIAL = (1 shl 7)
+    companion object {
+        private val MONGO_MESSAGE_HEAD_SIZE = 4 * 4
     }
-
-    override suspend fun runCommand(
-        db: String, payload: BsonDocument,
-        numberToSkip: Int, numberToReturn: Int
-    ): MongoDB.Reply = writeMongoOpQuery("$db.\$cmd", numberToSkip, numberToReturn, payload)
-
 }
-
-open class MongoDBException(message: String, val code: Int = -1) : RuntimeException(message)
-
-open class MongoDBWriteException(val exceptions: List<MongoDBException>) :
-    MongoDBException(exceptions.map { it.message }.joinToString(", "))
-
-class MongoDBFileNotFoundException(val file: String) : MongoDBException("Can't find file '$file'", -1)
-
-fun <K, V> mapOfNotNull(vararg pairs: Pair<K, V>): Map<K, V> {
-    val out = LinkedHashMap<K, V>()
-    for ((k, v) in pairs) if (v != null) out[k] = v
-    return out
-}
-
-fun <K, V> MutableMap<K, V>.putNotNull(key: K, value: V) {
-    if (value != null) put(key, value)
-}
-
-inline fun mongoMap(callback: MutableMap<String, Any?>.() -> Unit): BsonDocument =
-    LinkedHashMap<String, Any?>().apply(callback)
-

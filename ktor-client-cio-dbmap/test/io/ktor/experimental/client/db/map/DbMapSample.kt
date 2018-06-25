@@ -4,6 +4,7 @@ import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.postgre.*
 import io.ktor.experimental.client.util.*
 import kotlinx.coroutines.experimental.*
+import java.util.concurrent.atomic.*
 
 annotation class Index(val name: String)
 
@@ -20,18 +21,18 @@ data class Counter(
 object DbMapSample {
     @JvmStatic
     fun main(args: Array<String>) {
+        val counter = AtomicInteger()
         runBlocking {
-            val db = DbClientPool { index ->
-                println("Creating postgre client: $index")
-                PostgreClient(
-                    user = "ktor-cio-sample",
-                    database = "ktor-cio-sample"
-                ).apply {
-                    notices {
-                        //println("NOTICE: $it")
+            val db = DBClientPool {
+                println("Creating postgre client: ${counter.getAndIncrement()}")
+                runBlocking {
+                    PostgreClient(user = "ktor-cio-sample", database = "ktor-cio-sample").apply {
+                        notices {
+                            //println("NOTICE: $it")
+                        }
+                    }.withInfoHook {
+                        println("PG[$counter]:$this")
                     }
-                }.withInfoHook {
-                    println("PG[$index]:$this")
                 }
             }
 

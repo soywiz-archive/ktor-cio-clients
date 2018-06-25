@@ -1,5 +1,7 @@
 package io.ktor.experimental.sessions.redis
 
+import com.palantir.docker.compose.*
+import com.palantir.docker.compose.connection.waiting.*
 import io.ktor.application.*
 import io.ktor.experimental.client.redis.*
 import io.ktor.http.*
@@ -10,6 +12,7 @@ import io.ktor.server.netty.*
 import io.ktor.server.testing.*
 import io.ktor.sessions.*
 import org.junit.*
+import java.net.*
 
 class RedisSessionStorageIntegrationTest {
     @Test
@@ -29,10 +32,38 @@ class RedisSessionStorageIntegrationTest {
             Assert.assertEquals("hello: TestSession(visits=1)", response.content)
         }
     }
+
+    companion object {
+        val REDIS_SERVICE = "redis"
+        val REDIS_PORT = 6379
+        val REDIS_PASSWORD = "myawesomepass"
+
+        lateinit var address: InetSocketAddress
+
+        @JvmField
+        @ClassRule
+        val docker = DockerComposeRule.builder()
+            .file("resources/compose-redis.yml")
+            .waitingForService("redis", HealthChecks.toHaveAllPortsOpen())
+            .build()!!
+
+        @BeforeClass
+        @JvmStatic
+        fun init() {
+            val redis = docker
+                .containers()
+                .container(REDIS_SERVICE)
+                .port(REDIS_PORT)!!
+
+            address = InetSocketAddress(redis.ip, redis.externalPort)
+        }
+    }
 }
 
 private fun Application.testModule() {
-    val redis = Redis()
+    val redis = RedisClient(
+        RedisSessionStorageIntegrationTest.address, password = RedisSessionStorageIntegrationTest.REDIS_PASSWORD
+    )
 
     data class TestSession(val visits: Int = 0)
 
@@ -60,7 +91,7 @@ internal object RedisSessionStorageSpike {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        val redis = Redis()
+        val redis = RedisClient()
 
         embeddedServer(Netty, 8080) {
             install(Sessions) {
