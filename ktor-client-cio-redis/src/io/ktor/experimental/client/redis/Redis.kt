@@ -1,8 +1,11 @@
 package io.ktor.experimental.client.redis
 
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
+import io.ktor.network.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
+import org.slf4j.*
 import java.io.*
 import java.net.*
 import java.nio.charset.*
@@ -37,6 +40,8 @@ interface Redis {
     )
 }
 
+val logger = LoggerFactory.getLogger(Redis::class.java)
+
 /**
  * Constructs a Redis multi-client that will connect to [addresses] in a round-robin fashion keeping a connection pool,
  * keeping as much as [maxConnections] and using the [charset].
@@ -53,11 +58,12 @@ fun Redis(
 ): Redis {
     var index = 0
     return RedisCluster(maxConnections = maxConnections, charset = charset) {
-        val tcpClientFactory = aSocket().tcp()
+        val tcpClientFactory = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp()
         RedisClient(
             reconnect = { client ->
                 index = (index + 1) % addresses.size
                 val host = addresses[index] // Round Robin
+                logger.trace("Connecting to redis...")
                 val socket = tcpClientFactory.connect(host)
                 if (password != null) client.auth(password)
                 Redis.Pipes(
@@ -187,6 +193,7 @@ internal class RedisClient(
                     stats.commandsFinished.incrementAndGet()
                     return@commandQueue res
                 } catch (t: IOException) {
+                    logger.error("Redis.commandAny.catch(IOException)")
                     t.printStackTrace()
                     stats.commandsErrored.incrementAndGet()
                     try {

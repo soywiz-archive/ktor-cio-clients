@@ -138,30 +138,6 @@ object RESP {
 
         private fun writeValue(value: Any?, out: BlobBuilder) {
             when (value) {
-                null -> out.append("+(nil)").appendEol()
-                is Int -> out.append(':').append(value).appendEol()
-                is Long -> out.append(':').append(value).appendEol()
-                is ByteArray -> {
-                    blobBuilders.use { chunk ->
-                        chunk.write(value)
-                        out.append('$').append(chunk.size()).appendEol()
-                        out.append(chunk).appendEol()
-                    }
-                }
-                is String -> {
-                    if (forceBulk || value.contains('\n') || value.contains('\r')) {
-                        blobBuilders.use { chunk ->
-                            chunk.append(value)
-                            out.append('$').append(chunk.size()).appendEol()
-                            out.append(chunk).appendEol()
-                        }
-                    } else {
-                        out.append('+').append(value).appendEol()
-                    }
-                }
-                is Throwable -> {
-                    out.append('-').append((value.message ?: "Error").replace("\r", "").replace("\n", "")).appendEol()
-                }
                 is List<*> -> {
                     out.append('*').append(value.size).appendEol()
                     for (item in value) writeValue(item, out)
@@ -171,7 +147,44 @@ object RESP {
                     for (item in value) writeValue(item, out)
                 }
                 else -> {
-                    error("Unsupported $value to write")
+                    if (forceBulk) {
+                        blobBuilders.use { chunk ->
+                            chunk.append("$value")
+                            out.append('$').append(chunk.size()).appendEol()
+                            out.append(chunk).appendEol()
+                        }
+                    } else {
+                        when (value) {
+                            null -> out.append("+(nil)").appendEol()
+                            is Int -> out.append(':').append(value).appendEol()
+                            is Long -> out.append(':').append(value).appendEol()
+                            is ByteArray -> {
+                                blobBuilders.use { chunk ->
+                                    chunk.write(value)
+                                    out.append('$').append(chunk.size()).appendEol()
+                                    out.append(chunk).appendEol()
+                                }
+                            }
+                            is String -> {
+                                if (value.contains('\n') || value.contains('\r')) {
+                                    blobBuilders.use { chunk ->
+                                        chunk.append(value)
+                                        out.append('$').append(chunk.size()).appendEol()
+                                        out.append(chunk).appendEol()
+                                    }
+                                } else {
+                                    out.append('+').append(value).appendEol()
+                                }
+                            }
+                            is Throwable -> {
+                                out.append('-').append((value.message ?: "Error").replace("\r", "").replace("\n", ""))
+                                    .appendEol()
+                            }
+                            else -> {
+                                error("Unsupported $value to write")
+                            }
+                        }
+                    }
                 }
             }
         }

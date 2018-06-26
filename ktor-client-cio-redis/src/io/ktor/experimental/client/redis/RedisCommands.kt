@@ -15,7 +15,7 @@ suspend fun Redis.set(key: String, value: String) = commandString("set", key, va
 suspend fun Redis.get(key: String) = commandString("get", key)
 suspend fun Redis.del(vararg keys: String) = commandString("del", *keys)
 suspend fun Redis.echo(msg: String) = commandString("echo", msg)
-suspend fun Redis.expire(key: String, time: Int) = commandString("expire", key, time)
+suspend fun Redis.expire(key: String, time: Int) = commandString("expire", key, "$time")
 
 suspend fun Redis.hset(key: String, member: String, value: String): Long = commandLong("hset", key, member, value)
 
