@@ -5,7 +5,9 @@ import io.ktor.experimental.client.mongodb.bson.Bson.writeBsonCString
 import io.ktor.experimental.client.mongodb.bson.Bson.writeBsonDocument
 import io.ktor.experimental.client.mongodb.util.*
 import io.ktor.experimental.client.util.*
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
+import io.ktor.network.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.*
@@ -17,7 +19,7 @@ import java.util.concurrent.*
 // https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
 fun MongoDB(host: String = "127.0.0.1", port: Int = 27017): MongoDB {
     return MongoDBClient {
-        val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
+        val socket = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port))
         MongoDBClient.Pipes(
             read = socket.openReadChannel(),
             write = socket.openWriteChannel(autoFlush = true),

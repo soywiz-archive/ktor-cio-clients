@@ -2,7 +2,9 @@ package io.ktor.experimental.client.cassandra
 
 import io.ktor.experimental.client.util.*
 import io.ktor.experimental.client.util.sync.*
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
+import io.ktor.network.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import org.intellij.lang.annotations.*
@@ -281,7 +283,7 @@ class Cassandra private constructor(
     companion object {
         suspend operator fun invoke(host: String = "127.0.0.1", port: Int = 9042, debug: Boolean = false): Cassandra {
             val bufferSize = 0x1000
-            val client = aSocket().tcp().connect(InetSocketAddress(host, port))
+            val client = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port))
             return invoke(
                 reader = client.openReadChannel(),
                 writer = client.openWriteChannel(autoFlush = true),

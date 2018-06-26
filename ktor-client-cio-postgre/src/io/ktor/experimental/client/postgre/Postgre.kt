@@ -3,7 +3,9 @@ package io.ktor.experimental.client.postgre
 import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.util.*
 import io.ktor.experimental.client.util.sync.*
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
+import io.ktor.network.util.*
 import kotlinx.coroutines.experimental.channels.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.coroutines.experimental.time.*
@@ -397,7 +399,7 @@ suspend fun PostgreClient(
     config: PostgresConfig = PostgresConfig()
 ): PostgreClient {
     return PostgreClient(user, password, database, config = config) {
-        val socket = aSocket().tcp().connect(InetSocketAddress(host, port))
+        val socket = aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port))
         DbClientConnection(
             socket.openReadChannel(),
             socket.openWriteChannel(autoFlush = false),

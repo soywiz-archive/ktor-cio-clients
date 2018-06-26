@@ -1,8 +1,10 @@
 package io.ktor.experimental.client.ftp
 
 import io.ktor.experimental.client.util.*
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.sockets.Socket
+import io.ktor.network.util.*
 import io.ktor.util.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.*
@@ -28,7 +30,7 @@ class FtpClient private constructor(val socket: Socket, val secure: Boolean, val
             logger: FtpLogger = FtpLogger()
         ): FtpClient =
             FtpClient(
-                aSocket().tcp().connect(InetSocketAddress(host, port)).optTls(secure), secure, logger
+                aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(InetSocketAddress(host, port)).optTls(secure), secure, logger
             ).apply {
                 init(user, password)
             }
@@ -80,7 +82,7 @@ class FtpClient private constructor(val socket: Socket, val secure: Boolean, val
         val socketDataAddress = PASV()
         if (start != null) REST(start)
         val res = CMD(cmd, *args)
-        aSocket().tcp().connect(socketDataAddress).optTls(secure).use { socketData ->
+        aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(socketDataAddress).optTls(secure).use { socketData ->
             try {
                 val result = handler(socketData)
                 println(readResponse())

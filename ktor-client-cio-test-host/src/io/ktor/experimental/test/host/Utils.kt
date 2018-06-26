@@ -49,6 +49,7 @@ class LogHttpClient {
     val client = HttpClient(object : HttpClientEngineFactory<HttpClientEngineConfig> {
         override fun create(block: HttpClientEngineConfig.() -> Unit): HttpClientEngine {
             return object : HttpClientEngine {
+                override val config: HttpClientEngineConfig = HttpClientEngineConfig()
                 override val dispatcher: CoroutineDispatcher = DefaultDispatcher
                 override fun close() = Unit
                 override suspend fun execute(call: HttpClientCall, data: HttpRequestData): HttpEngineCall {

@@ -1,7 +1,7 @@
 buildscript {
-    ext.kotlin_version = '1.2.41'
-    ext.ktor_version = '0.9.2'
-    ext.kotlinx_coroutines = '0.22.3'
+    ext.kotlin_version = '1.2.50'
+    ext.ktor_version = '0.9.3'
+    ext.kotlinx_coroutines = '0.23.3'
 
     repositories {
         jcenter()
@@ -22,7 +22,7 @@ allprojects {
     apply plugin: 'com.jfrog.bintray'
 
     group 'io.ktor.experimental.clients'
-    version '0.0.6'
+    version '0.1.0'
 
     sourceCompatibility = 1.8
     compileKotlin.kotlinOptions.jvmTarget = "1.8"

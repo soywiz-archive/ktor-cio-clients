@@ -13,7 +13,7 @@ import org.junit.*
 
 class RedisSessionStorageIntegrationTest {
     @Test
-    fun `simple`() = withTestApplication(Application::testModule) {
+    fun simple() = withTestApplication(Application::testModule) {
         var cookie = ""
 
         with(handleRequest(HttpMethod.Get, "/")) {
@@ -22,12 +22,12 @@ class RedisSessionStorageIntegrationTest {
             cookie = response.cookies["SESSION"]!!.value
         }
 
-        //with(handleRequest(HttpMethod.Get, "/") {
-        //    addHeader("SESSION", cookie) // @TODO: This doesn't seems to work
-        //}) {
-        //    Assert.assertEquals(HttpStatusCode.OK, response.status())
-        //    Assert.assertEquals("Hello, world!", response.content)
-        //}
+        with(handleRequest(HttpMethod.Get, "/") {
+            addHeader("Cookie", "SESSION=$cookie")
+        }) {
+            Assert.assertEquals(HttpStatusCode.OK, response.status())
+            Assert.assertEquals("hello: TestSession(visits=1)", response.content)
+        }
     }
 }
 
@@ -49,7 +49,7 @@ private fun Application.testModule() {
             val ses =
                 call.sessions.getOrNull<TestSession>() ?: TestSession()
             call.sessions.set(TestSession(ses.visits + 1))
-            call.respondText("hello: " + ses)
+            call.respondText("hello: $ses")
         }
     }
 }
@@ -75,7 +75,7 @@ internal object RedisSessionStorageSpike {
                 get("/") {
                     val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()
                     call.sessions.set(TestSession(ses.visits + 1))
-                    call.respondText("hello: " + ses)
+                    call.respondText("hello: $ses")
                 }
                 get("/set") {
                     val ses = call.sessions.getOrNull<TestSession>() ?: TestSession()

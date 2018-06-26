@@ -29,7 +29,7 @@ class S3Test {
 
             assertEquals("hello", s3.bucket("test").file("hello.txt").readString())
             assertEquals(
-                listOf("GET, https://test.s3-demo.amazonaws.com/hello.txt, Headers [date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:I/jL9Lkq+n6DT0ZuLmK71B/wABQ=]], "),
+                listOf("GET, https://test.s3-demo.amazonaws.com/hello.txt, Headers [date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:I/jL9Lkq+n6DT0ZuLmK71B/wABQ=], Accept=[*/*]], "),
                 httpClient.getAndClearLog()
             )
         }
@@ -40,7 +40,7 @@ class S3Test {
         runBlocking {
             s3.bucket("test").file("hello.json").writeString("hello")
             assertEquals(
-                listOf("PUT, https://test.s3-demo.amazonaws.com/hello.json, Headers [Content-Type=[application/json], Content-Length=[5], x-amz-acl=[private], date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:lzucas2uhwPa2vsVJoRzta6RAtg=]], hello"),
+                listOf("PUT, https://test.s3-demo.amazonaws.com/hello.json, Headers [Content-Type=[application/json], Content-Length=[5], x-amz-acl=[private], date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:lzucas2uhwPa2vsVJoRzta6RAtg=], Accept=[*/*]], hello"),
                 httpClient.getAndClearLog()
             )
         }
@@ -52,7 +52,7 @@ class S3Test {
             s3.file("test", "hello.txt")
                 .writeString("hello", contentType = ContentType.Image.JPEG, access = S3.ACL.PUBLIC_READ)
             assertEquals(
-                listOf("PUT, https://test.s3-demo.amazonaws.com/hello.txt, Headers [Content-Type=[image/jpeg], Content-Length=[5], x-amz-acl=[public-read], date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:DceOjup5BapxMUuh6Ww07viLyxg=]], hello"),
+                listOf("PUT, https://test.s3-demo.amazonaws.com/hello.txt, Headers [Content-Type=[image/jpeg], Content-Length=[5], x-amz-acl=[public-read], date=[Tue, 07 Feb 2017 00:15:48 UTC], Authorization=[AWS myaccesskey:DceOjup5BapxMUuh6Ww07viLyxg=], Accept=[*/*]], hello"),
                 httpClient.getAndClearLog()
             )
         }

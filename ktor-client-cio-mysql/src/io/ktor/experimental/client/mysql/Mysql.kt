@@ -3,8 +3,10 @@ package io.ktor.experimental.client.mysql
 import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.util.*
 import io.ktor.experimental.client.util.sync.*
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.sockets.Socket
+import io.ktor.network.util.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.ByteOrder
 import java.io.*
@@ -186,7 +188,7 @@ class MysqlClient private constructor(
         ): MysqlClient {
             //return invoke(AsyncClient().connect(host, port), user, password, database)
             return invoke(
-                aSocket().tcp().connect(
+                aSocket(ActorSelectorManager(ioCoroutineDispatcher)).tcp().connect(
                     InetSocketAddress(host, port)
                 ), user, password, database
             )
