@@ -1,6 +1,7 @@
 package io.ktor.experimental.client.mongodb
 
 import io.ktor.experimental.client.mongodb.bson.*
+import io.ktor.experimental.client.mongodb.util.*
 import io.ktor.experimental.client.util.*
 
 data class MongoDBQuery(val config: Config) : SuspendingSequence<BsonDocument> {
