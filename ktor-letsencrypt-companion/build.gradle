@@ -1,0 +1,22 @@
+dependencies {
+
+    compile "io.ktor:ktor-server-host-common:$ktor_version"
+    compile "io.ktor:ktor-server-netty:$ktor_version"
+    compile "io.ktor:ktor-server-core:$ktor_version"
+    compile "io.ktor:ktor-client-json:$ktor_version"
+    compile "io.ktor:ktor-client-apache:$ktor_version"
+    //compile "io.ktor:ktor-auth-jwt:$ktor_version"
+    compile project(":ktor-client-cio-util")
+
+
+    testCompile "io.ktor:ktor-server-netty:$ktor_version"
+    testCompile "io.ktor:ktor-client-mock:$ktor_version"
+    testCompile "ch.qos.logback:logback-classic:1.2.1"
+    testCompile "io.ktor:ktor-server-test-host:$ktor_version"
+
+    //compile 'org.shredzone.acme4j:acme4j:2.1'
+    //testCompile "org.shredzone.acme4j:acme4j:2.1"
+
+    compile 'org.shredzone.acme4j:acme4j-client:2.1'
+    compile 'org.shredzone.acme4j:acme4j-utils:2.1'
+}

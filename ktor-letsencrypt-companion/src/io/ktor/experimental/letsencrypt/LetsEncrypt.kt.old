@@ -1,0 +1,431 @@
+package io.ktor.experimental.letsencrypt
+
+import io.ktor.application.*
+import io.ktor.client.*
+import io.ktor.client.engine.*
+import io.ktor.client.engine.apache.*
+import io.ktor.client.features.json.*
+import io.ktor.network.tls.certificates.*
+import io.ktor.pipeline.*
+import io.ktor.request.*
+import io.ktor.response.*
+import io.ktor.routing.*
+import io.ktor.util.*
+import kotlinx.coroutines.experimental.*
+import org.shredzone.acme4j.*
+import org.shredzone.acme4j.challenge.*
+import org.shredzone.acme4j.util.*
+import java.io.*
+import java.security.*
+import java.security.cert.*
+import java.security.spec.*
+import javax.net.ssl.*
+import javax.xml.bind.*
+import kotlin.collections.set
+import kotlin.reflect.*
+
+
+// PROTOCOL-v01: https://tools.ietf.org/html/draft-ietf-acme-acme-01
+class LetsEncrypt(val config: Configuration) {
+    val client = HttpClient(config.engine) {
+        install(JsonFeature) {
+        }
+    }
+
+    ///////////////////////////
+    // ACME v1
+    //   [Production] https://acme-v01.api.letsencrypt.org/directory
+    //   [Staging] https://acme-staging.api.letsencrypt.org/directory
+    // ACME v2
+    //   [Production] https://acme-v02.api.letsencrypt.org/directory
+    //   [Staging] https://acme-staging-v02.api.letsencrypt.org/directory
+    ///////////////////////////
+
+    data class DomainSet(val config: Configuration, val domains: List<String>, val organization: String) {
+        val mainDomain = domains.first()
+    }
+
+    class Configuration {
+        //var acmeEndPoint = "https://acme-v01.api.letsencrypt.org/directory"
+        //var acmeDirectoryEndPoint = "https://acme-staging.api.letsencrypt.org/directory"
+        internal var kind = "staging"
+        internal var acmeDirectoryEndPoint = "https://acme-staging-v02.api.letsencrypt.org/directory"
+        //val acmeDirectoryEndPoint = "acme://letsencrypt.org/staging"
+        var engine: HttpClientEngine = Apache.create { }
+        var certFolder = File(".")
+        var certsize = 4096
+        lateinit var email: String
+        internal val domains = arrayListOf<DomainSet>()
+
+        fun setProduction() {
+            kind = "production"
+            acmeDirectoryEndPoint = "https://acme-v02.api.letsencrypt.org/directory"
+        }
+
+        fun setStaging() {
+            kind = "staging"
+            acmeDirectoryEndPoint = "https://acme-staging-v02.api.letsencrypt.org/directory"
+        }
+
+        /**
+         * A domain that will require HTTPS. Ktor must be processing HTTP calls for this domain already.
+         */
+        fun addDomainSet(mainDomain: String, vararg extraDomains: String, organization: String = "myorganization") {
+            domains += DomainSet(this, listOf(mainDomain) + extraDomains, organization)
+        }
+    }
+
+    companion object Feature : ApplicationFeature<Application, Configuration, LetsEncrypt> {
+        override val key = AttributeKey<LetsEncrypt>(LetsEncrypt::class.simpleName!!)
+        override fun install(pipeline: Application, configure: Configuration.() -> Unit): LetsEncrypt {
+            val feature = LetsEncrypt(
+                Configuration().apply(configure)
+            )
+            pipeline.intercept(ApplicationCallPipeline.Infrastructure) { feature.intercept(this) }
+            pipeline.environment.monitor.subscribe(ApplicationStarted) {
+                launch(newSingleThreadContext("ConfigureLetsEncrypt")) {
+                    feature.applicationStarted()
+                }
+            }
+            return feature
+        }
+    }
+
+    private fun intercept(context: PipelineContext<Unit, ApplicationCall>) {
+        context.application.routing {
+            // https://ietf-wg-acme.github.io/acme/draft-ietf-acme-acme.html#http-challenge
+            get("/.well-known/acme-challenge/{token}") {
+                val host = call.request.host() ?: error("No host!")
+                val token = call.parameters["token"]
+                val content = tokens[host]?.get(token) ?: "error"
+                call.respondText(content)
+            }
+        }
+    }
+
+    //val getDirectory by lazyAsync { client.get<Map<String, Any?>>(URL(config.acmeDirectoryEndPoint)) }
+    //val getDirectory by lazyAsync { client.get<LetsEncryptDirectory>(URL(config.acmeDirectoryEndPoint)) }
+
+    val tokens = LinkedHashMap<String, LinkedHashMap<String, String>>()
+
+    val DomainSet.crtFile get() = File(config.certFolder, "letsencrypt-${config.kind}-chain-${mainDomain}.crt")
+    val DomainSet.csrFile get() = File(config.certFolder, "letsencrypt-${config.kind}-domain-${mainDomain}.csr")
+    val DomainSet.keyFile get() = File(config.certFolder, "letsencrypt-${config.kind}-key-${mainDomain}.key")
+
+    val userCertFile = File(config.certFolder, "letsencrypt-${config.kind}-user-${File(config.email).name}.cert")
+
+    private val account by lazy {
+        val email = config.email
+
+        if (!userCertFile.exists()) {
+            val keyPair = generateKeyPair(config.certsize)
+            userCertFile.writeBytes(keyPair.toByteArray())
+        }
+
+        val keyPair = KeyPair(userCertFile.readBytes())
+
+        val login = AccountBuilder()
+            .addContact("mailto:$email")
+            .agreeToTermsOfService()
+            .useKeyPair(keyPair)
+            .createLogin(session)
+
+        login.account
+    }
+
+    suspend fun applicationStarted() {
+        // launch(newSingleThreadContext("MyOwnThread"))
+        for (domainSet in config.domains) {
+            println("Processing $domainSet")
+            val order = account.newOrder().domains(domainSet.domains).create()
+            val crtFile = domainSet.crtFile
+            val csrFile = domainSet.csrFile
+
+            println(order.authorizations)
+
+            for (auth in order.authorizations) {
+                println(auth.status)
+                if (auth.status != Status.VALID) {
+                    val challenge =
+                        auth.findChallenge<Http01Challenge>(Http01Challenge.TYPE) ?: error("Can't find http challenge")
+
+                    println(challenge)
+                    println(challenge.location)
+                    println(challenge.validated)
+                    println(challenge.authorization)
+                    println(challenge.token)
+                    println(auth.domain)
+
+                    val domainMap = tokens.getOrPut(auth.domain) { LinkedHashMap() }
+                    domainMap[challenge.token] = challenge.authorization
+
+                    challenge.trigger()
+
+                    println("auth.status: ${auth.status}")
+                    var count = 0
+                    while (auth.status != Status.VALID) {
+                        println("auth.status: ${auth.status}")
+                        Thread.sleep(6000L)
+                        auth.update()
+                        count++
+                        if (auth.status == Status.INVALID) error("Invalid auth")
+                        if (count >= 10) error("Couldn't process")
+                    }
+
+                    val domainKeyPair = generateKeyPair(config.certsize)
+
+                    domainSet.keyFile.writeBytes(domainKeyPair.toByteArray())
+
+
+                    println("Creating $csrFile...")
+
+                    val csrb = CSRBuilder()
+                    for (domain in domainSet.domains) {
+                        csrb.addDomain(domain)
+                    }
+                    csrb.setOrganization(domainSet.organization)
+                    csrb.sign(domainKeyPair)
+                    val csr = csrb.encoded
+
+                    csrb.write(FileWriter(csrFile))
+
+                    order.execute(csr)
+
+                    println("CERT.order.status: ${order.status}")
+                    while (order.status != Status.VALID) {
+                        println("CERT.order.status: ${order.status}")
+                        Thread.sleep(3000L)
+                        order.update()
+                    }
+
+                    //val cert = order.certificate?.certificate
+                    val cert = order.certificate ?: error("Can't download certificate chain!")
+                    FileWriter(crtFile).use { cert.writeCertificate(it) }
+                }
+
+                //println("order.certificate: ${order.certificate?.certificateChain}")
+            }
+
+            val domainSet = config.domains.first()
+
+            val cert = loadPublicX509(domainSet.crtFile.readBytes())
+            //val privateKey = loadPrivateKey(domainSet.csrFile.readBytes())
+            val privateKey = KeyPair(domainSet.keyFile.readBytes()).private
+
+            val keyStore = LetsEncryptCerts.keyStore
+
+            keyStore.setEntry(
+                LetsEncryptCerts.alias,
+                KeyStore.PrivateKeyEntry(privateKey, arrayOf(cert)),
+                KeyStore.PasswordProtection(
+                    charArrayOf()
+                )
+            )
+
+            val algo = Security.getProperty("ssl.KeyManagerFactory.algorithm") ?: "SunX509"
+            val kmf = KeyManagerFactory.getInstance(algo)
+            kmf.init(keyStore, charArrayOf())
+
+
+            //val registration = RegistrationBuilder().addContact("mailto:acme@example.com").create(session)
+            //val cert = registration.requestCertificate(csr)
+
+
+            //java.security.Certificate
+            //keyStore.setEntry("domain", KeyStore.PrivateKeyEntry())
+
+
+            //val ks: KeyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+            val ctx = SSLContext.getInstance("TLS")
+            ctx.init(kmf.keyManagers, null, null)
+
+            /*
+        order.authorizations.map { it.findChallenge(Http01Challenge.TYPE) }
+
+        val challenge = auth.findChallenge(Http01Challenge.TYPE)
+        */
+        }
+    }
+
+
+    suspend fun registerDomains() {
+        //val directory = getDirectory()
+        //println(directory)
+
+    }
+
+    val session = Session(config.acmeDirectoryEndPoint)
+
+    // https://tools.ietf.org/html/draft-ietf-acme-acme-01#section-6.3
+    suspend fun createAccount(email: String) {
+
+
+        //println(account.contacts)
+        //println(account.status)
+        //println(account.json)
+        //println(account.location)
+        //println(account.orders.asSequence().toList())
+
+        /*
+        val directory = getDirectory()
+        val termsOfService = directory.meta.`terms-of-service`
+        val newRegUrl = directory.`new-reg`
+        println(newRegUrl)
+        println(directory)
+        println(termsOfService)
+
+        /*
+        LetsEncryptNewReg(
+            agreement = termsOfService,
+            contact = listOf("mailto:$email"),
+            key = LetsEncryptKey(e = "e", kty = "RSA", n = "n"),
+            createdAt = "",
+        )
+        */
+
+        /*
+        Rsa
+        val jwk = RSAKey.Builder(keyPair.public as RSAPublicKey)
+            .privateKey(keyPair.private as RSAPrivateKey)
+            .keyID(UUID.randomUUID().toString()) // Give the key some ID (optional)
+            .build()
+        */
+
+        //val jwtBody = JWT.create()
+        val algo = Algorithm.RSA512(keyPair.public as RSAPublicKey, keyPair.private as RSAPrivateKey)
+        //val jwtBody = JWT.require(algo)
+        val jwtBody = JWT.create()
+            .withSubject(Gson().toJson(mapOf(
+                "resource" to "new-reg",
+                "contact" to "mailto:$email"
+            )))
+            //.withHeader(mapOf("jwk" to "hello"))
+            .sign(algo)
+
+        println(jwtBody)
+
+        val result = client.post<String>(URL(newRegUrl)) {
+            body = jwtBody
+        }
+
+        println(result)
+
+        /*
+        {
+            "agreement" : "https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf",
+            "contact" : [
+            "mailto:noteed@gmail.com"
+            ],
+            "key" : {
+            "e" : "...",
+            "kty" : "RSA",
+            "n" : "..."
+        },
+            "id" : 36009,
+            "createdAt" : "2015-12-04T14:22:08.321951547Z",
+            "initialIp" : "80.236.245.73"
+        }
+        */
+        */
+    }
+
+    class AsyncOnce<T> {
+        var promise: Deferred<T>? = null
+
+        suspend operator fun invoke(callback: suspend () -> T): T {
+            if (promise == null) {
+                promise = async { callback() }
+            }
+            return promise!!.await()
+        }
+    }
+
+    class lazyAsync<T>(val callback: suspend () -> T) {
+        val once = AsyncOnce<T>()
+        val gen = suspend { once { callback() } }
+        operator fun getValue(item: Any, property: KProperty<*>): suspend () -> T = gen
+    }
+}
+
+object LetsEncryptCerts {
+    val alias = "ktor-alias"
+    val keyStore = generateCertificate(File("temp.keystore", alias), keyAlias = alias, keyPassword = "", jksPassword = "")
+    /*
+    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+        load(null, null)
+        setEntry(
+            LetsEncryptCerts.alias,
+            KeyStore.PrivateKeyEntry(generateKeyPair(1024).private, arrayOf()),
+            KeyStore.PasswordProtection(charArrayOf())
+        )
+    }
+    */
+}
+
+fun generateKeyPair(certsize: Int) =
+    KeyPairGenerator.getInstance("RSA").apply { initialize(certsize, SecureRandom()) }.generateKeyPair()
+
+fun KeyPair(bytes: ByteArray): KeyPair =
+    StringReader(bytes.toString(Charsets.UTF_8)).use { KeyPairUtils.readKeyPair(it) }
+
+fun KeyPair.toByteArray(): ByteArray =
+    CharArrayWriter().apply { KeyPairUtils.writeKeyPair(this@toByteArray, this) }.toString().toByteArray(Charsets.UTF_8)
+
+//data class LetsEncryptKey(val e: String, val kty: String, val n: String)
+//
+//data class LetsEncryptNewReg(
+//    val agreement: String,
+//    val contact: List<String>,
+//    val key: LetsEncryptKey,
+//    val id: Int,
+//    val createdAt: String,
+//    val initialIp: String
+//)
+//
+//data class LetsEncryptDirectory(
+//    val `key-change`: String,
+//    val meta: LetsEncryptDirectory.Meta,
+//    val `new-authz`: String,
+//    val `new-cert`: String,
+//    val `new-reg`: String,
+//    val `revoke-cert`: String
+//) {
+//    data class Meta(
+//        val caaIdentities: List<String>,
+//        val `terms-of-service`: String,
+//        val website: String
+//    )
+//
+//}
+
+fun loadPublicX509(bytes: ByteArray): X509Certificate? {
+    return CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(bytes)) as X509Certificate
+}
+
+fun loadPrivateKey(bytes: ByteArray): PrivateKey {
+    val br = BufferedReader(InputStreamReader(ByteArrayInputStream(bytes)))
+    val builder = StringBuilder()
+    var inKey = false
+    var line: String? = br.readLine()
+    while (line != null) {
+        if (!inKey) {
+            if (line.startsWith("-----BEGIN ") && line.endsWith(" PRIVATE KEY-----")) {
+                inKey = true
+            }
+            line = br.readLine()
+            continue
+        } else {
+            if (line.startsWith("-----END ") && line.endsWith(" PRIVATE KEY-----")) {
+                inKey = false
+                break
+            }
+            builder.append(line)
+        }
+        line = br.readLine()
+    }
+    //
+    val encoded = DatatypeConverter.parseBase64Binary(builder.toString())
+    val keySpec = PKCS8EncodedKeySpec(encoded)
+    val kf = KeyFactory.getInstance("RSA")
+    return kf.generatePrivate(keySpec)
+}
