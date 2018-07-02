@@ -1,7 +1,7 @@
 package io.ktor.experimental.client.util
 
 object Hex {
-    val DIGITS = "0123456789ABCDEF"
+    const val DIGITS = "0123456789ABCDEF"
     val DIGITS_UPPER = DIGITS.toUpperCase()
     val DIGITS_LOWER = DIGITS.toLowerCase()
 

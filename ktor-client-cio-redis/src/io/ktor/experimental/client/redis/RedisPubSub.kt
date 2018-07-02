@@ -1,5 +1,7 @@
 package io.ktor.experimental.client.redis
 
+import io.ktor.experimental.client.redis.protocol.Reader
+import io.ktor.experimental.client.redis.protocol.Writer
 import kotlinx.coroutines.experimental.channels.*
 import java.io.*
 import java.nio.charset.*
@@ -11,15 +13,15 @@ class RedisSubscription private constructor(
     val messages: ReceiveChannel<Message>,
     val charset: Charset
 ) : Closeable, ReceiveChannel<RedisSubscription.Message> by messages {
-    val subscrptions get() = psubscriptions.get()
+    val subscriptions get() = psubscriptions.get()
 
-    private val respWriter = RESP.Writer(charset)
+    private val respWriter = Writer(charset)
 
     data class Message(val pattern: String?, val channel: String, val content: String)
 
     companion object {
         suspend fun open(pipes: Redis.Pipes, charset: Charset): RedisSubscription {
-            val respReader = RESP.Reader(charset)
+            val respReader = Reader(charset)
             val psubscriptions = AtomicLong(0L)
 
             return RedisSubscription(pipes, psubscriptions, produce {

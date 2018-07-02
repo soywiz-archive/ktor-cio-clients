@@ -54,7 +54,7 @@ internal class BlobBuilder(size: Int, val charset: Charset) : ByteArrayOutputStr
         }
     }
 
-    fun append(char: Char) = this.apply {
+    fun append(char: Char): BlobBuilder {
         if (char.toInt() <= 0xFF) {
             write(char.toInt())
         } else {
@@ -63,6 +63,8 @@ internal class BlobBuilder(size: Int, val charset: Charset) : ByteArrayOutputStr
             tempCB.flip()
             append(tempCB)
         }
+
+        return this
     }
 
     fun append(str: String) = this.apply {
@@ -81,31 +83,39 @@ internal class BlobBuilder(size: Int, val charset: Charset) : ByteArrayOutputStr
         }
     }
 
-    fun append(bb: ByteBuffer) = this.apply {
+    fun append(bb: ByteBuffer): BlobBuilder {
         while (bb.hasRemaining()) {
             write(bb.get().toInt())
         }
+
+        return this
     }
 
-    fun append(cb: CharBuffer) = this.apply {
+    fun append(cb: CharBuffer): BlobBuilder {
         charsetEncoder.reset()
+
         while (cb.hasRemaining()) {
             tempBB.clear()
             charsetEncoder.encode(cb, tempBB, false)
             tempBB.flip()
             append(tempBB)
         }
+
         tempBB.clear()
         charsetEncoder.encode(cb, tempBB, true)
         tempBB.flip()
         append(tempBB)
+
+        return this
     }
 
-    fun append(that: BlobBuilder) = this.apply {
-        this.write(that.buf(), 0, that.size())
+    fun append(that: BlobBuilder): BlobBuilder {
+        write(that.buf(), 0, that.size())
+
+        return this
     }
 
-    override fun toString() = String(buf, 0, size(), charset)
+    override fun toString(): String = String(buf, 0, size(), charset)
 }
 
 internal suspend fun BlobBuilder.writeTo(channel: ByteWriteChannel) {

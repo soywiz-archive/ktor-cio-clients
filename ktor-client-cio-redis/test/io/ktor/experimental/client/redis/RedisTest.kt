@@ -1,5 +1,6 @@
 package io.ktor.experimental.client.redis
 
+import io.ktor.experimental.client.redis.protocol.*
 import io.ktor.experimental.client.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*

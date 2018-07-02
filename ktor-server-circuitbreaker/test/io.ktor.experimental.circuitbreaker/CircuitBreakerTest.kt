@@ -27,6 +27,8 @@ class CircuitBreakerTest {
         val PipelineContext<Unit, ApplicationCall>.redisWrapped: Redis
             get() {
                 return object : Redis {
+                    override suspend fun capturePipes(): Redis.Pipes = TODO()
+
                     override suspend fun commandAny(vararg args: Any?): Any? = withService(RedisService) { service ->
                         service.commandAny(*args)
                     }
