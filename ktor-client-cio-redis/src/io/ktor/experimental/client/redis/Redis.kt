@@ -10,6 +10,7 @@ import org.slf4j.*
 import java.io.*
 import java.net.*
 import java.nio.charset.*
+import java.util.concurrent.atomic.*
 
 internal val LOG = LoggerFactory.getLogger(Redis::class.java)
 
@@ -54,12 +55,12 @@ class RedisClient(
     private val address: SocketAddress = InetSocketAddress("127.0.0.1", 6379),
     maxConnections: Int = 50,
     password: String? = null,
-    bufferSize: Int = 0x1000,
-    charset: Charset = Charsets.UTF_8,
-    dispatcher: CoroutineDispatcher = DefaultDispatcher
+    override val charset: Charset = Charsets.UTF_8,
+    private val dispatcher: CoroutineDispatcher = DefaultDispatcher
 ) : Redis {
     override val context: Job = Job()
 
+    private val runningPipelines = AtomicInteger()
     private val selectorManager = ActorSelectorManager(dispatcher)
     private val requestQueue = Channel<RedisRequest>()
 
@@ -70,9 +71,15 @@ class RedisClient(
             try {
                 if (requestQueue.offer(it)) return@consumeEach
 
-                /**
-                 * 1. run new pipeline if required
-                 */
+                while (true) {
+                    val current = runningPipelines.get()
+                    if (current >= maxConnections) break
+
+                    if (!runningPipelines.compareAndSet(current, current + 1)) continue
+
+                    createNewPipeline()
+                    break
+                }
 
                 requestQueue.send(it)
             } finally {
@@ -97,6 +104,10 @@ class RedisClient(
             .tcpNoDelay()
             .tcp().connect(address)
 
-        RedisPipeline(socket, requestQueue)
+        val pipeline = RedisPipeline(socket, requestQueue, charset, dispatcher = dispatcher)
+
+        pipeline.context.invokeOnCompletion {
+            runningPipelines.decrementAndGet()
+        }
     }
 }

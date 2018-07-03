@@ -41,16 +41,11 @@ suspend fun Redis.zcard(key: String): Long = commandLong("zcard", key)
 suspend fun Redis.zrevrank(key: String, member: String): Long = commandLong("zrevrank", key, member)
 suspend fun Redis.zscore(key: String, member: String): Long = commandLong("zscore", key, member)
 
-suspend fun Redis.hgetall(key: String): Map<String, String> {
-    return commandArrayString("hgetall", key).listOfPairsToMap()
-}
+suspend fun Redis.hgetall(key: String): Map<String, String> = commandArrayString("hgetall", key).listOfPairsToMap()
 
-suspend fun Redis.zrevrange(key: String, start: Long, stop: Long): Map<String, Double> {
-    return commandArrayString("zrevrange", key, start, stop, "WITHSCORES").listOfPairsToMap()
-        .mapValues { "${it.value}".toDouble() }
-}
+suspend fun Redis.zrevrange(key: String, start: Long, stop: Long): Map<String, Double> =
+    commandArrayString("zrevrange", key, start, stop, "WITHSCORES").listOfPairsToMap()
+        .mapValues { it.value.toDouble() }
 
-private fun List<Any?>.listOfPairsToMap(): Map<String, String> {
-    val list = this
-    return (0 until list.size / 2).map { ("" + list[it * 2 + 0]) to ("" + list[it * 2 + 1]) }.toMap()
-}
+private fun List<Any?>.listOfPairsToMap(): Map<String, String> =
+    (0 until size / 2).map { ("" + this[it * 2 + 0]) to ("" + this[it * 2 + 1]) }.toMap()

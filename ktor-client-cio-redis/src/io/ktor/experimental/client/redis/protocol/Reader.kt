@@ -48,7 +48,7 @@ internal class Reader(val charset: Charset, val bufferSize: Int = 1024) {
                     null
                 } else {
                     val data = reader.readPacket(bytesToRead).readBytes()
-                    reader.readFully(tempCRLF) // CR LF
+                    reader.readShort() // Skip CRLF
                     data.toString(charset)
                 }
             }

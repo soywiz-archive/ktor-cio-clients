@@ -14,25 +14,25 @@ inline fun MemorySyncStreamToByteArray(callback: ByteArrayOutputStream.() -> Uni
 }
 
 fun OutputStream.write8(v: Int) {
-    this.write(v)
+    write(v)
 }
 
 fun OutputStream.write16_be(v: Int) {
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 0) and 0xFF)
+    write((v ushr 8) and 0xFF)
+    write((v ushr 0) and 0xFF)
 }
 
 fun OutputStream.write24_be(v: Int) {
-    this.write((v ushr 16) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 0) and 0xFF)
+    write((v ushr 16) and 0xFF)
+    write((v ushr 8) and 0xFF)
+    write((v ushr 0) and 0xFF)
 }
 
 fun OutputStream.write32_be(v: Int) {
-    this.write((v ushr 24) and 0xFF)
-    this.write((v ushr 16) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 0) and 0xFF)
+    write((v ushr 24) and 0xFF)
+    write((v ushr 16) and 0xFF)
+    write((v ushr 8) and 0xFF)
+    write((v ushr 0) and 0xFF)
 }
 
 fun OutputStream.write64_be(v: Long) {
@@ -41,21 +41,21 @@ fun OutputStream.write64_be(v: Long) {
 }
 
 fun OutputStream.write16_le(v: Int) {
-    this.write((v ushr 0) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
+    write((v ushr 0) and 0xFF)
+    write((v ushr 8) and 0xFF)
 }
 
 fun OutputStream.write24_le(v: Int) {
-    this.write((v ushr 0) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 16) and 0xFF)
+    write((v ushr 0) and 0xFF)
+    write((v ushr 8) and 0xFF)
+    write((v ushr 16) and 0xFF)
 }
 
 fun OutputStream.write32_le(v: Int) {
-    this.write((v ushr 0) and 0xFF)
-    this.write((v ushr 8) and 0xFF)
-    this.write((v ushr 16) and 0xFF)
-    this.write((v ushr 24) and 0xFF)
+    write((v ushr 0) and 0xFF)
+    write((v ushr 8) and 0xFF)
+    write((v ushr 16) and 0xFF)
+    write((v ushr 24) and 0xFF)
 }
 
 fun OutputStream.write64_le(v: Long) {
@@ -64,7 +64,7 @@ fun OutputStream.write64_le(v: Long) {
 }
 
 fun OutputStream.writeBytes(bytes: ByteArray) {
-    this.write(bytes)
+    write(bytes)
 }
 
 fun OutputStream.writeStringz(str: String, charset: Charset = Charsets.UTF_8) {

@@ -1,5 +1,7 @@
 package io.ktor.experimental.client.redis
 
+import io.ktor.cio.*
+import io.ktor.experimental.client.redis.protocol.*
 import io.ktor.experimental.client.redis.protocol.Reader
 import io.ktor.experimental.client.redis.protocol.Writer
 import io.ktor.network.sockets.*
@@ -7,39 +9,38 @@ import io.ktor.network.sockets.Socket
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import kotlinx.coroutines.experimental.io.*
-import java.net.*
+import kotlinx.io.core.*
+import java.io.*
 import java.nio.charset.*
 
-class RedisRequest(val args: Any?, val result: CompletableDeferred<ByteReadChannel>)
+internal class RedisRequest(val args: Any?, val result: CompletableDeferred<ByteReadChannel>)
 
 private const val DEFAULT_PIPELINE_SIZE = 10
 
 /**
- * Rewrite in request consuming way
+ * Redis connection pipeline
+ * https://redis.io/topics/pipelining
  */
 internal class RedisPipeline(
-    private val socketAddress: Socket,
-    bufferSize: Int = 0x1000,
+    socket: Socket,
+    private val requestQueue: Channel<RedisRequest>,
+    private val charset: Charset = Charsets.UTF_8,
     pipelineSize: Int = DEFAULT_PIPELINE_SIZE,
-    private val dispatcher: CoroutineDispatcher = DefaultDispatcher
-) : Redis {
-    override val context: Job = Job()
+    dispatcher: CoroutineDispatcher = DefaultDispatcher
+) : Closeable {
+    private val input = socket.openReadChannel()
+    private val output = socket.openWriteChannel()
 
-    private val reader = Reader(charset, bufferSize)
-    private val writer = Writer(charset)
+    private val reader = Reader(charset)
 
-    // Common queue is not required align reading because Redis support pipelining : https://redis.io/topics/pipelining
-    private val sender = actor<RedisRequest>(
-        dispatcher, capacity = pipelineSize, parent = context
-    ) {
-        val builder = BlobBuilder(bufferSize, charset)
-
-        consumeEach { request ->
+    val context: Job = launch(dispatcher) {
+        requestQueue.consumeEach { request ->
             receiver.send(request.result)
 
-            builder.reset()
-            writer.writeValue(request.args, builder)
-            builder.writeTo(output)
+            output.writePacket {
+                writeRedisValue(request.args, charset = charset)
+            }
+
             output.flush()
         }
     }
@@ -55,12 +56,6 @@ internal class RedisPipeline(
                 result.completeExceptionally(cause)
             }
         }
-    }
-
-    override suspend fun execute(vararg args: Any?): ByteReadChannel {
-        val result = CompletableDeferred<ByteReadChannel>()
-        sender.send(RedisRequest(args, result))
-        return result.await()
     }
 
     override fun close() {
