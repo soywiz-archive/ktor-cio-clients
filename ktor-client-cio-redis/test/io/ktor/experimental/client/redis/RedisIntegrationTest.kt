@@ -34,7 +34,7 @@ class RedisIntegrationTest {
 
     @Test
     fun authTest(): Unit = redisTest {
-        assertFailsWith<RedisResponseException> {
+        assertFailsWith<RedisException> {
             runBlocking {
                 redis.auth("not the right password")
             }

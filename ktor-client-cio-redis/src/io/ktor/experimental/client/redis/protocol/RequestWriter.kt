@@ -3,11 +3,12 @@ package io.ktor.experimental.client.redis.protocol
 import kotlinx.io.core.*
 import java.nio.charset.*
 
-private val EOL = "\r\n".toByteArray()
-
+/**
+ * TODO: Consider to remove duplicated data types
+ */
 internal fun BytePacketBuilder.writeRedisValue(
     value: Any?,
-    forceBulk: Boolean = true,
+    forceBulk: Boolean = true, // TODO: consider use cases
     charset: Charset = Charsets.UTF_8
 ): Unit = when {
     value is List<*> -> writeListValue(value, forceBulk, charset)
@@ -21,11 +22,11 @@ internal fun BytePacketBuilder.writeRedisValue(
     else -> error("Unsupported $value to write")
 }
 
-private fun BytePacketBuilder.writeListValue(
-    value: List<*>,
+private fun <T : List<*>> BytePacketBuilder.writeListValue(
+    value: T,
     forceBulk: Boolean = true, charset: Charset = Charsets.UTF_8
 ) {
-    append('*')
+    append(RedisType.ARRAY)
     append(value.size.toString())
     appendEOL()
     for (item in value) writeRedisValue(item, forceBulk, charset)
@@ -35,7 +36,7 @@ private fun BytePacketBuilder.writeArrayValue(
     value: Array<*>,
     forceBulk: Boolean = true, charset: Charset = Charsets.UTF_8
 ) {
-    append('*')
+    append(RedisType.ARRAY)
     append(value.size.toString())
     appendEOL()
     for (item in value) writeRedisValue(item, forceBulk, charset)
@@ -45,7 +46,7 @@ private fun BytePacketBuilder.writeBulk(value: Any?, charset: Charset) {
     val packet = buildPacket {
         writeStringEncoded(value.toString(), charset = charset)
     }
-    append('$')
+    append(RedisType.BULK)
     append(packet.remaining.toString())
     appendEOL()
     writePacket(packet)
@@ -53,7 +54,7 @@ private fun BytePacketBuilder.writeBulk(value: Any?, charset: Charset) {
 }
 
 private fun BytePacketBuilder.writeByteArray(value: ByteArray) {
-    append('$')
+    append(RedisType.BULK)
     append(value.size.toString())
     appendEOL()
     writeFully(value)
@@ -63,7 +64,7 @@ private fun BytePacketBuilder.writeByteArray(value: ByteArray) {
 private fun BytePacketBuilder.writeString(value: String, charset: Charset) {
     if (value.contains('\n') || value.contains('\r')) {
         val packet = buildPacket { writeStringEncoded(value, charset) }
-        append('$')
+        append(RedisType.BULK)
         append(packet.remaining.toString())
         appendEOL()
         writePacket(packet)
@@ -77,13 +78,14 @@ private fun BytePacketBuilder.writeString(value: String, charset: Charset) {
 }
 
 private fun BytePacketBuilder.writeIntegral(value: Any) {
-    append(':')
+    append(RedisType.NUMBER)
     append(value.toString())
     appendEOL()
 }
 
 private fun BytePacketBuilder.writeNull() {
-    append("+(nil)")
+    append(RedisType.BULK)
+    append("-1")
     appendEOL()
 }
 
@@ -92,13 +94,17 @@ private fun BytePacketBuilder.writeThrowable(value: Throwable) {
         .replace("\r", "")
         .replace("\n", "")
 
-    append('-')
+    append(RedisType.ERROR)
     append(message)
     appendEOL()
 }
 
+private fun BytePacketBuilder.append(type: RedisType) {
+    writeByte(type.code)
+}
+
 private fun BytePacketBuilder.appendEOL() {
-    writeFully(EOL)
+    writeFully(REDIS_EOL)
 }
 
 private fun BytePacketBuilder.writeStringEncoded(string: String, charset: Charset) {

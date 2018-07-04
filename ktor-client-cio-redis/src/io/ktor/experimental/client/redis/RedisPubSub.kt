@@ -15,7 +15,7 @@ class RedisSubscription private constructor(
 ) : Closeable, ReceiveChannel<RedisSubscription.Message> by messages {
     val subscriptions get() = psubscriptions.get()
 
-    private val respWriter = Writer(charset)
+    private val respWriter = TODO() Writer(charset)
 
     data class Message(val pattern: String?, val channel: String, val content: String)
 

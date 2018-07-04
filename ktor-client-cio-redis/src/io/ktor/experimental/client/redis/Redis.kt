@@ -1,18 +1,13 @@
 package io.ktor.experimental.client.redis
 
-import io.ktor.experimental.client.redis.protocol.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
-import kotlinx.coroutines.experimental.io.*
-import org.slf4j.*
 import java.io.*
 import java.net.*
 import java.nio.charset.*
 import java.util.concurrent.atomic.*
-
-internal val LOG = LoggerFactory.getLogger(Redis::class.java)
 
 /**
  * A Redis basic interface exposing emiting commands receiving their responses.
@@ -38,7 +33,7 @@ interface Redis : Closeable {
      *
      * It may throw a [RedisResponseException]
      */
-    suspend fun execute(vararg args: Any?): ByteReadChannel
+    suspend fun execute(vararg args: Any?): Any?
 }
 
 /**
@@ -89,8 +84,8 @@ class RedisClient(
         }
     }
 
-    override suspend fun execute(vararg args: Any?): ByteReadChannel {
-        val result = CompletableDeferred<ByteReadChannel>()
+    override suspend fun execute(vararg args: Any?): Any? {
+        val result = CompletableDeferred<Any?>()
         postmanService.send(RedisRequest(args, result))
         return result.await()
     }
