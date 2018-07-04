@@ -1,3 +1,5 @@
+package io.ktor.experimental.client.redis
+
 // https://redis.io/commands/
 // https://github.com/antirez/redis/blob/32ac4c64baf00747da1acc0cc61ee236922e2dcf/src/help.h#L23
 object RedisCommands {
@@ -8,7 +10,10 @@ object RedisCommands {
             "Append a value to a key",
             1,
             "2.0.0",
-            PARAMS(STR("key"), STR("value")),
+            PARAMS(
+                STR("key"),
+                STR("value")
+            ),
             RET_LONG
         )
         , Command(
@@ -44,7 +49,13 @@ object RedisCommands {
             "Count set bits in a string",
             1,
             "2.6.0",
-            PARAMS(STR("key"), OPTIONAL(INT("start"), INT("end"))),
+            PARAMS(
+                STR("key"),
+                OPTIONAL(
+                    INT("start"),
+                    INT("end")
+                )
+            ),
             RET_LONG
         )
         , Command(
@@ -80,7 +91,11 @@ object RedisCommands {
             "Remove and get the first element in a list, or block until one is available",
             2,
             "2.0.0",
-            PARAMS(VARARG(STR("key")), INT("timeout")),
+            PARAMS(
+                VARARG(
+                    STR("key")
+                ), INT("timeout")
+            ),
             RET_TODO
         )
         , Command(
@@ -89,7 +104,11 @@ object RedisCommands {
             "Remove and get the last element in a list, or block until one is available",
             2,
             "2.0.0",
-            PARAMS(VARARG(STR("key")), INT("timeout")),
+            PARAMS(
+                VARARG(
+                    STR("key")
+                ), INT("timeout")
+            ),
             RET_TODO
         )
         , Command(
@@ -98,7 +117,11 @@ object RedisCommands {
             "Pop a value from a list, push it to another list and return it; or block until one is available",
             2,
             "2.2.0",
-            PARAMS(STR("source"), STR("destination"), INT("timeout")),
+            PARAMS(
+                STR("source"),
+                STR("destination"),
+                INT("timeout")
+            ),
             RET_TODO
         )
         , Command(
@@ -737,7 +760,11 @@ object RedisCommands {
             "Set the string value of a hash field",
             5,
             "2.0.0",
-            PARAMS(STR("key"), STR("field"), STR("value")),
+            PARAMS(
+                STR("key"),
+                STR("field"),
+                STR("value")
+            ),
             RET_LONG
         )
         , Command(
@@ -1784,17 +1811,21 @@ object RedisCommands {
 
     data class STR(override val name: String) : PARAM
     data class INT(override val name: String) : PARAM
-    data class VARARG(val param: PARAM) : PARAM_DESC
+    data class VARARG(val param: PARAM) :
+        PARAM_DESC
 
-    data class OPTIONAL(val params: List<PARAM_DESC>) : PARAM_DESC {
+    data class OPTIONAL(val params: List<PARAM_DESC>) :
+        PARAM_DESC {
         companion object {
-            operator fun invoke(vararg params: PARAM_DESC) = OPTIONAL(params.toList())
+            operator fun invoke(vararg params: PARAM_DESC) =
+                OPTIONAL(params.toList())
         }
     }
 
     data class PARAMS(val params: List<PARAM_DESC>) {
         companion object {
-            operator fun invoke(vararg params: PARAM_DESC) = PARAMS(params.toList())
+            operator fun invoke(vararg params: PARAM_DESC) =
+                PARAMS(params.toList())
         }
     }
 

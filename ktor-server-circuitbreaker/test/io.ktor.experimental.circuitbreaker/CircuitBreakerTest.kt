@@ -12,9 +12,9 @@ import java.util.concurrent.*
 
 class CircuitBreakerTest {
     companion object Spike {
-        val RedisService: CircuitBreaker.Service<Redis> = CircuitBreaker.Service(
+        val RedisService = CircuitBreaker.Service(
             "redis",
-            Redis(maxConnections = 1),
+            RedisClient(maxConnections = 1),
             timeout = 5,
             timeoutUnit = TimeUnit.SECONDS
         ) { redis ->
@@ -27,15 +27,20 @@ class CircuitBreakerTest {
         val PipelineContext<Unit, ApplicationCall>.redisWrapped: Redis
             get() {
                 return object : Redis {
-                    override suspend fun capturePipes(): Redis.Pipes = TODO()
+                    override val context: Job = RedisService.instance.context
 
-                    override suspend fun commandAny(vararg args: Any?): Any? = withService(RedisService) { service ->
-                        service.commandAny(*args)
+                    override suspend fun execute(vararg args: Any?): Any? = withService(RedisService) { service ->
+                        service.execute(args)
+                    }
+
+                    override fun close() {
+                        RedisService.instance.close()
                     }
                 }
             }
 
-        @JvmStatic fun main(args: Array<String>) {
+        @JvmStatic
+        fun main(args: Array<String>) {
             embeddedServer(Netty, port = 8080) {
                 install(StatusPages) {
                     exception<TimeoutCancellationException> {

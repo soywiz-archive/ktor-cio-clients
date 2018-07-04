@@ -1,3 +1,5 @@
+package io.ktor.experimental.client.redis
+
 import io.ktor.http.*
 
 object Generate {
@@ -31,12 +33,20 @@ object Generate {
                         TODO()
                     }
                 }
-                return ParamResult(decl.joinToString(", "), invoke.joinToString(", "), ret)
+                return ParamResult(
+                    decl.joinToString(", "),
+                    invoke.joinToString(", "),
+                    ret
+                )
             }
         } catch (e: NotImplementedError) {
             errorAppend = " /* TODO */"
         }
-        return ParamResult("vararg args: String$errorAppend", "$namePartsStr, *args", ret)
+        return ParamResult(
+            "vararg args: String$errorAppend",
+            "$namePartsStr, *args",
+            ret
+        )
     }
 
     val RedisCommands.PARAM.kotlinType: String

@@ -49,7 +49,7 @@ interface Redis : Closeable {
 class RedisClient(
     private val address: SocketAddress = InetSocketAddress("127.0.0.1", 6379),
     maxConnections: Int = 50,
-    password: String? = null,
+    private val password: String? = null,
     override val charset: Charset = Charsets.UTF_8,
     private val dispatcher: CoroutineDispatcher = DefaultDispatcher
 ) : Redis {
@@ -63,24 +63,27 @@ class RedisClient(
         dispatcher, parent = context
     ) {
         channel.consumeEach {
-            try {
-                if (requestQueue.offer(it)) return@consumeEach
+            if (requestQueue.offer(it)) return@consumeEach
 
-                while (true) {
-                    val current = runningPipelines.get()
-                    if (current >= maxConnections) break
+            while (true) {
+                val current = runningPipelines.get()
+                if (current >= maxConnections) break
 
-                    if (!runningPipelines.compareAndSet(current, current + 1)) continue
+                if (!runningPipelines.compareAndSet(current, current + 1)) continue
 
-                    createNewPipeline()
-                    break
-                }
-
-                requestQueue.send(it)
-            } finally {
-                selectorManager.close()
-                requestQueue.close()
+                createNewPipeline()
+                break
             }
+
+            requestQueue.send(it)
+        }
+
+        requestQueue.close()
+    }
+
+    init {
+        context.invokeOnCompletion {
+            selectorManager.close()
         }
     }
 
@@ -97,9 +100,10 @@ class RedisClient(
     private suspend fun createNewPipeline() {
         val socket = aSocket(selectorManager)
             .tcpNoDelay()
-            .tcp().connect(address)
+            .tcp()
+            .connect(address)
 
-        val pipeline = RedisPipeline(socket, requestQueue, charset, dispatcher = dispatcher)
+        val pipeline = RedisPipeline(socket, requestQueue, password, charset, dispatcher = dispatcher)
 
         pipeline.context.invokeOnCompletion {
             runningPipelines.decrementAndGet()

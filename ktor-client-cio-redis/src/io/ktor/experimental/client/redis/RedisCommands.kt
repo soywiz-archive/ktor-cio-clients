@@ -2,17 +2,16 @@ package io.ktor.experimental.client.redis
 
 // @TODO: Missing commands & generate
 
-suspend fun Redis.ping() = commandString("ping")
+suspend fun Redis.ping(): String? = commandString("ping")
 
-suspend fun Redis.append(key: String, value: String) = commandString("append", key, value)
-suspend fun Redis.auth(password: String) = commandString("auth", password)
-suspend fun Redis.bgrewriteaof() = commandString("bgrewriteaof")
-suspend fun Redis.bgsave() = commandString("bgsave")
-suspend fun Redis.bitcount(key: String) = commandString("bitcount", key)
-suspend fun Redis.bitcount(key: String, start: Int, end: Int) = commandString("bitcount", key, "$start", "$end")
+suspend fun Redis.append(key: String, value: String): String? = commandString("append", key, value)
+suspend fun Redis.bgrewriteaof(): String? = commandString("bgrewriteaof")
+suspend fun Redis.bgsave(): String? = commandString("bgsave")
+suspend fun Redis.bitcount(key: String): String? = commandString("bitcount", key)
+suspend fun Redis.bitcount(key: String, start: Int, end: Int): String? = commandString("bitcount", key, "$start", "$end")
 
-suspend fun Redis.set(key: String, value: String) = commandString("set", key, value)
-suspend fun Redis.get(key: String) = commandString("get", key)
+suspend fun Redis.set(key: String, value: String): String? = commandString("set", key, value)
+suspend fun Redis.get(key: String): String? = commandString("get", key)
 suspend fun Redis.del(vararg keys: String) = commandString("del", *keys)
 suspend fun Redis.echo(msg: String) = commandString("echo", msg)
 suspend fun Redis.expire(key: String, time: Int) = commandString("expire", key, "$time")

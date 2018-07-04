@@ -19,7 +19,8 @@ private const val DEFAULT_PIPELINE_SIZE = 10
 internal class RedisPipeline(
     socket: Socket,
     private val requestQueue: Channel<RedisRequest>,
-    private val charset: Charset = Charsets.UTF_8,
+    private val password: String?,
+    private val charset: Charset,
     pipelineSize: Int = DEFAULT_PIPELINE_SIZE,
     dispatcher: CoroutineDispatcher = DefaultDispatcher
 ) : Closeable {
@@ -27,6 +28,19 @@ internal class RedisPipeline(
     private val output = socket.openWriteChannel()
 
     val context: Job = launch(dispatcher) {
+
+        try {
+            password?.let { auth(it) }
+        } catch (cause: Throwable) {
+
+            requestQueue.consumeEach {
+                it.result.completeExceptionally(cause)
+            }
+
+            requestQueue.cancel(cause)
+            throw cause
+        }
+
         requestQueue.consumeEach { request ->
             receiver.send(request.result)
 
@@ -48,9 +62,21 @@ internal class RedisPipeline(
                 input.readRedisMessage(decoder)
             }
         }
+
+        output.close()
+        socket.close()
     }
 
     override fun close() {
         context.cancel()
+    }
+
+    private suspend fun auth(password: String) {
+        output.writePacket {
+            writeRedisValue(listOf("auth", password), charset = charset)
+        }
+        output.flush()
+
+        input.readRedisMessage(charset.newDecoder())
     }
 }
