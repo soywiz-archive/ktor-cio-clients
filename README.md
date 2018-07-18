@@ -16,3 +16,15 @@ repositories {
     maven { url "https://dl.bintray.com/soywiz/soywiz" }
 }
 ```
+
+## Redis client
+
+For a Redis client, please use <https://github.com/ktorio/ktor-client-redis>
+
+Right now, some of the repos here require to locally install the `ktor-client-redis`:
+
+```
+git clone https://github.com/ktorio/ktor-client-redis
+cd ktor-client-redis
+./gradlew publishToMavenLocal
+```

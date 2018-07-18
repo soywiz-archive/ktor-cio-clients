@@ -5,6 +5,7 @@ import io.ktor.experimental.client.util.*
 import io.ktor.sessions.*
 import kotlinx.coroutines.experimental.io.*
 import java.io.*
+import java.util.*
 import kotlin.coroutines.experimental.*
 
 // @TODO: Ask: Could this be the default interface since Sessions are going to be small
