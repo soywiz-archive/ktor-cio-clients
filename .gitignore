@@ -12,3 +12,5 @@ webdav-root
 *.csr
 *.key
 *.keystore
+bin
+.project

@@ -1,6 +1,6 @@
 package io.ktor.experimental.client.postgre
 
-class PostgresConfig(
+class PostgreConfig(
     val debug: Boolean = false,
     val useByteReadReadInt: Boolean = false
 )

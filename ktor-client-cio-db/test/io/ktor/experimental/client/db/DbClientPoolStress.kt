@@ -16,7 +16,7 @@ object DbClientPoolStress {
                     PostgreClient(
                         user = "ktor-cio-sample",
                         database = "ktor-cio-sample",
-                        config = PostgresConfig(
+                        config = PostgreConfig(
                             useByteReadReadInt = true
                             //useByteReadReadInt = false
                         )

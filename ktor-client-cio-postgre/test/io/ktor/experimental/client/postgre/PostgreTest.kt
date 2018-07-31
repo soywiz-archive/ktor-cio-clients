@@ -13,7 +13,7 @@ class PostgreTest {
                 val bc = ByteChannel(true)
                 bc.writePostgreStartup("hello")
                 val packet = bc._readPostgrePacket(
-                    readType = false, config = PostgresConfig(
+                    readType = false, config = PostgreConfig(
                         useByteReadReadInt = useByteReadReadInt
                     )
                 )

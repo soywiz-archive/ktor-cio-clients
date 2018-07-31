@@ -1,11 +1,23 @@
 package io.ktor.experimental.client.postgre
 
-class PostgreException(val query: String, val items: List<String>) : RuntimeException() {
-    val parts by lazy {
+class PostgreException(
+    query: String,
+    val items: List<String>
+) : RuntimeException() {
+    private val parts by lazy {
         items.filter { it.isNotEmpty() }.associate { it.first() to it.substring(1) }
     }
 
-    val severity: String? get() = parts['S'] // Severity: the field contents are ERROR, FATAL, or PANIC (in an error message), or WARNING, NOTICE, DEBUG, INFO, or LOG (in a notice message), or a localized translation of one of these. Always present.
+    /**
+     * Severity: the field contents are:
+     * ERROR, FATAL, or PANIC (in an error message),
+     * or WARNING, NOTICE, DEBUG, INFO,
+     * or LOG (in a notice message),
+     * or a localized translation of one of these.
+     * Always present.
+     */
+    val severity: String get() = parts['S']!!
+
     val sqlstate: String? get() = parts['C'] // Code: the SQLSTATE code for the error (see Appendix A). Not localizable. Always present.
     val pmessage: String? get() = parts['M'] // Message: the primary human-readable error message. This should be accurate but terse (typically one line). Always present.
     val detail: String? get() = parts['D'] // Detail: an optional secondary error message carrying more detail about the problem. Might run to multiple lines.

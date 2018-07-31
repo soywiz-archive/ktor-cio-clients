@@ -1,4 +1,4 @@
-package io.ktor.experimental.client.postgre.db
+package io.ktor.experimental.client.postgre.scheme
 
 import io.ktor.experimental.client.db.*
 

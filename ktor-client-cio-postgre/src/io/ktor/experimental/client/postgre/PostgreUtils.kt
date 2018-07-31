@@ -1,34 +1,22 @@
 package io.ktor.experimental.client.postgre
 
-import io.ktor.experimental.client.postgre.db.*
-import io.ktor.experimental.client.util.*
-import io.ktor.experimental.client.util.sync.*
+import io.ktor.experimental.client.postgre.protocol.*
 import kotlinx.coroutines.experimental.io.*
-import java.io.*
+import kotlinx.io.charsets.*
+import kotlinx.io.core.*
+import kotlinx.io.core.ByteOrder
 
+
+@PublishedApi
 internal val POSTGRE_ENDIAN = ByteOrder.BIG_ENDIAN
 
-inline fun PostgrePacket(typeChar: Char, callback: ByteArrayOutputStream.() -> Unit): PostgrePacket {
-    return PostgrePacket(typeChar, buildByteArray(callback))
+inline fun PostgrePacket(typeChar: Char, callback: BytePacketBuilder.() -> Unit): PostgrePacket {
+    val packet = buildPacket(block = callback)
+    packet.byteOrder = POSTGRE_ENDIAN
+    return PostgrePacket(typeChar, packet)
 }
 
-internal suspend fun ByteReadChannel.readPostgrePacket(config: PostgresConfig): PostgrePacket {
-    return _readPostgrePacket(true, config)
-}
-
-//private val POSTGRE_ENDIAN = ByteOrder.LITTLE_ENDIAN
-
-fun ByteArray.readInt_be(offset: Int): Int {
-    val b0 = this[offset + 0].toInt() and 0xFF
-    val b1 = this[offset + 1].toInt() and 0xFF
-    val b2 = this[offset + 2].toInt() and 0xFF
-    val b3 = this[offset + 3].toInt() and 0xFF
-    return (b0 shl 24) or (b1 shl 16) or (b2 shl 8) or (b3 shl 0)
-}
-
-internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean, config: PostgresConfig): PostgrePacket {
-    readByteOrder = POSTGRE_ENDIAN
-
+internal suspend fun ByteReadChannel.readPostgrePacket(config: PostgreConfig, readType: Boolean = true): PostgrePacket {
     val type: Char
     val size: Int
 
@@ -38,10 +26,9 @@ internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean, confi
         size = readInt()
     } else {
         // @TODO: Works fine
-        val header = ByteArray(if (readType) 5 else 4)
-        readFully(header)
-        type = if (readType) (header[0].toInt() and 0xFF).toChar() else '\u0000'
-        size = if (readType) header.readInt_be(1) else header.readInt_be(0)
+        val header = readPacket(if (readType) 5 else 4)
+        type = if (readType) header.readByte().toChar() else '\u0000'
+        size = if (readType) header.readInt() else header.readInt()
     }
 
     val payloadSize = size - 4
@@ -51,7 +38,7 @@ internal suspend fun ByteReadChannel._readPostgrePacket(readType: Boolean, confi
     } else {
         //System.err.println("PG: OK: $type")
     }
-    return PostgrePacket(type, readBytesExact(payloadSize))
+    return PostgrePacket(type, readPacket(payloadSize))
 }
 
 internal suspend fun ByteWriteChannel.writePostgreStartup(
@@ -59,8 +46,13 @@ internal suspend fun ByteWriteChannel.writePostgreStartup(
     database: String = user,
     vararg params: Pair<String, String>
 ) {
-    val packet = PostgrePacket('\u0000', buildByteArray {
-        write32_be(0x0003_0000) // The protocol version number. The most significant 16 bits are the major version number (3 for the protocol described here). The least significant 16 bits are the minor version number (0 for the protocol described here).
+    val packet = PostgrePacket('\u0000') {
+        /**
+         * The protocol version number.
+         * The most significant 16 bits are the major version number (3 for the protocol described here).
+         * The least significant 16 bits are the minor version number (0 for the protocol described here).
+         */
+        writeInt(0x0003_0000)
         val pairArray = arrayListOf<Pair<String, String>>().apply {
             add("user" to user)
             add("database" to database)
@@ -73,22 +65,20 @@ internal suspend fun ByteWriteChannel.writePostgreStartup(
             writeStringz(value)
         }
         writeStringz("")
-    })
-    _writePostgrePacket(packet, first = true)
+    }
+
+    writePostgrePacket(packet, first = true)
 }
 
-internal suspend fun ByteWriteChannel._writePostgrePacket(packet: PostgrePacket, first: Boolean) {
+internal suspend fun ByteWriteChannel.writePostgrePacket(packet: PostgrePacket, first: Boolean = false) {
     writeByteOrder = POSTGRE_ENDIAN
     if (!first) writeByte(packet.type)
-    writeInt(4 + packet.payload.size)
-    writeFully(packet.payload)
+    writeInt(4 + packet.payload.remaining)
+    writePacket(packet.payload)
     flush()
 }
 
-internal suspend fun ByteWriteChannel.writePostgrePacket(packet: PostgrePacket) =
-    _writePostgrePacket(packet, first = false)
-
-fun String.postgreEscape(): String {
+internal fun String.postgreEscape(): String {
     var out = ""
     for (c in this) {
         when (c) {
@@ -110,5 +100,15 @@ fun String.postgreEscape(): String {
     return out
 }
 
-fun String.postgreQuote(): String = "'${this.postgreEscape()}'"
-fun String.postgreTableQuote(): String = "`${this.postgreEscape()}`"
+internal fun Output.writeStringz(value: String, charset: Charset = Charsets.UTF_8) {
+    val data = value.toByteArray(charset)
+    writeFully(data)
+    writeByte(0)
+}
+
+internal fun Input.readStringz(charset: Charset = Charsets.UTF_8): String = buildPacket {
+    readUntilDelimiter(0, this)
+}.readText(charset)
+
+internal fun String.postgreQuote(): String = "'${this.postgreEscape()}'"
+internal fun String.postgreTableQuote(): String = "`${this.postgreEscape()}`"
