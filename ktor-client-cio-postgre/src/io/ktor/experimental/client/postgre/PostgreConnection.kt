@@ -16,7 +16,7 @@ import java.net.*
 private val POSTGRE_SELECTOR_MANAGER = ActorSelectorManager(DefaultDispatcher)
 
 class PostgreConnection(
-    val host: String, val port: Int,
+    val address: InetSocketAddress,
     val user: String, val password: String?,
     val database: String
 ) : ConnectionPipeline<String, DbRowSet>() {
@@ -27,8 +27,8 @@ class PostgreConnection(
 
     override suspend fun onStart() {
         socket = aSocket(POSTGRE_SELECTOR_MANAGER)
-            .tcp()
-            .tcpNoDelay().connect(InetSocketAddress(host, port))
+            .tcp().tcpNoDelay()
+            .connect(address)
 
         input = socket.openReadChannel()
         output = socket.openWriteChannel()

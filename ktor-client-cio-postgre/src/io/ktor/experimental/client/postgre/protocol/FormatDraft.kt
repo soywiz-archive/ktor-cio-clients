@@ -19,7 +19,7 @@ import kotlinx.io.core.*
  */
 
 /**
- * TODO: clash
+ * TODO: resolve clash
  */
 internal enum class MessageType(val code: Char) {
     AUTHENTICATION_REQUEST('R'),
@@ -89,6 +89,8 @@ internal enum class AuthenticationType(val code: Int) {
     SASL(10),
 
     SASL_CONTINUE(11),
-    SASL_FINAL(12)
+    SASL_FINAL(12);
+
+    fun fromCode(code: Int): AuthenticationType = values()[code]
 }
 

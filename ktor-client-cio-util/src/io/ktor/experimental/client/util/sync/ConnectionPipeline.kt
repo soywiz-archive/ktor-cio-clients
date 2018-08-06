@@ -4,6 +4,7 @@ import io.ktor.experimental.client.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import kotlinx.io.core.*
+import java.util.concurrent.atomic.*
 
 private class PipelineElement<TRequest : Any, TResponse : Any>(
     val request: TRequest,
@@ -11,6 +12,7 @@ private class PipelineElement<TRequest : Any, TResponse : Any>(
 )
 
 abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
+    private val started = AtomicBoolean(false)
     open val context: Job = Job()
 
     private val writer = actor<PipelineElement<TRequest, TResponse>>(
@@ -20,15 +22,29 @@ abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
         try {
             onStart()
             for (element in channel) {
-                reader.send(element.response)
+                try {
+                    reader.send(element.response)
+                } catch (cause: Throwable) {
+                    element.response.completeExceptionally(cause)
+                    throw cause
+                }
+
                 send(element.request)
             }
         } catch (cause: Throwable) {
             reader.close(cause)
             onError(cause)
+
+            try {
+                consumeEach { it.response.completeExceptionally(cause) }
+            } catch (cause: Throwable) {
+            }
         } finally {
             reader.close()
-            onDone()
+            try {
+                onDone()
+            } catch (_: Throwable) {
+            }
         }
     }
 
