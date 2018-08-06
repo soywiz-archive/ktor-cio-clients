@@ -1,7 +1,6 @@
 package io.ktor.experimental.client.postgre
 
 class PostgreException(
-    query: String,
     val items: List<String>
 ) : RuntimeException() {
     private val parts by lazy {
@@ -35,5 +34,5 @@ class PostgreException(
     val line: String? get() = parts['L'] // Line: the line number of the source-code location where the error was reported.
     val routine: String? get() = parts['R'] // Routine: the name of the source-code routine reporting the error.
 
-    override val message: String? = "$severity: $pmessage ($parts) for query=$query"
+    override val message: String? = "$severity: $pmessage ($parts)"
 }

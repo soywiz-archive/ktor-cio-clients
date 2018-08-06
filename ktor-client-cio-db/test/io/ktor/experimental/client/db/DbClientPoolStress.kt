@@ -15,15 +15,8 @@ object DbClientPoolStress {
                 runBlocking {
                     PostgreClient(
                         user = "ktor-cio-sample",
-                        database = "ktor-cio-sample",
-                        config = PostgreConfig(
-                            useByteReadReadInt = true
-                            //useByteReadReadInt = false
-                        )
+                        database = "ktor-cio-sample"
                     ).apply {
-                        notices {
-                            //println("NOTICE: $it")
-                        }
                     }.withInfoHook {
                         //println("PG[$index]:$this")
                     }

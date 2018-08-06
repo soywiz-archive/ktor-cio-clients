@@ -9,7 +9,7 @@ import java.nio.charset.*
 
 suspend fun ByteReadChannel.readBytesExact(count: Int): ByteArray {
     val packet = readPacket(count)
-    if (packet.remaining != count) error("Couldn't read exact bytes $count")
+    if (packet.remaining != count.toLong()) error("Couldn't read exact bytes $count")
     return packet.readBytes(count)
 }
 

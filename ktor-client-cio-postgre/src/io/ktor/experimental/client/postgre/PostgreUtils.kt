@@ -7,37 +7,13 @@ import kotlinx.io.core.*
 import kotlinx.io.core.ByteOrder
 
 
-@PublishedApi
-internal val POSTGRE_ENDIAN = ByteOrder.BIG_ENDIAN
+inline fun PostgrePacket(typeChar: Char, callback: BytePacketBuilder.() -> Unit): PostgrePacket =
+    PostgrePacket(typeChar, buildPacket { callback() })
 
-inline fun PostgrePacket(typeChar: Char, callback: BytePacketBuilder.() -> Unit): PostgrePacket {
-    val packet = buildPacket(block = callback)
-    packet.byteOrder = POSTGRE_ENDIAN
-    return PostgrePacket(typeChar, packet)
-}
-
-internal suspend fun ByteReadChannel.readPostgrePacket(config: PostgreConfig, readType: Boolean = true): PostgrePacket {
-    val type: Char
-    val size: Int
-
-    if (config.useByteReadReadInt) {
-        // @TODO: Read strange values under pressure
-        type = if (readType) readByte().toChar() else '\u0000'
-        size = readInt()
-    } else {
-        // @TODO: Works fine
-        val header = readPacket(if (readType) 5 else 4)
-        type = if (readType) header.readByte().toChar() else '\u0000'
-        size = if (readType) header.readInt() else header.readInt()
-    }
-
-    val payloadSize = size - 4
-    if (payloadSize < 0) {
-        //System.err.println("PG: ERROR: $type")
-        throw IllegalStateException("_readPostgrePacket: type=$type, payloadSize=$payloadSize, readType=$readType")
-    } else {
-        //System.err.println("PG: OK: $type")
-    }
+internal suspend fun ByteReadChannel.readPostgrePacket(startUp: Boolean = false): PostgrePacket {
+    val type = if (!startUp) readByte().toChar() else '\u0000'
+    val payloadSize = readInt() - 4
+    if (payloadSize < 0) throw IllegalStateException("readPostgrePacket: type=$type, payloadSize=$payloadSize")
     return PostgrePacket(type, readPacket(payloadSize))
 }
 
@@ -71,11 +47,18 @@ internal suspend fun ByteWriteChannel.writePostgreStartup(
 }
 
 internal suspend fun ByteWriteChannel.writePostgrePacket(packet: PostgrePacket, first: Boolean = false) {
-    writeByteOrder = POSTGRE_ENDIAN
     if (!first) writeByte(packet.type)
     writeInt(4 + packet.payload.remaining)
     writePacket(packet.payload)
     flush()
+}
+
+internal suspend fun ByteWriteChannel.writePostgrePacket(
+    type: MessageType,
+    first: Boolean = false,
+    block: BytePacketBuilder.() -> Unit
+) {
+    writePostgrePacket(PostgrePacket(type.code, block), first)
 }
 
 internal fun String.postgreEscape(): String {

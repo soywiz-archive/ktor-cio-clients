@@ -5,10 +5,10 @@ import kotlinx.coroutines.experimental.*
 /**
  * Use [block] to complete [deferred], also handles [block] exceptions
  */
-inline fun <T> completeWith(deferred: CompletableDeferred<T>, block: () -> T) {
+inline fun <T> CompletableDeferred<T>.completeWith(block: () -> T) {
     try {
-        deferred.complete(block())
+        complete(block())
     } catch (cause: Throwable) {
-        deferred.completeExceptionally(cause)
+        completeExceptionally(cause)
     }
 }

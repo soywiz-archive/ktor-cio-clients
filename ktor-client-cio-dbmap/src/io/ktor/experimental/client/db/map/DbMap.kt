@@ -53,7 +53,7 @@ class TableInfo<T : Any>(val db: DBClient, val klazz: KClass<T>) {
     val clazz = klazz.java
     private val annotationTableName = klazz.findAnnotation<Name>()
     val tableName: String get() = annotationTableName?.name ?: klazz.simpleName ?: "unknown"
-    val quotedTableName by lazy { db.quoteTable(tableName) }
+    val quotedTableName by lazy { quoteTable(tableName) }
 
     val primaryConstructor = klazz.primaryConstructor ?: error("No primary constructor")
     val primaryParams = primaryConstructor.parameters.associateBy { it.name }
@@ -76,7 +76,7 @@ class TableInfo<T : Any>(val db: DBClient, val klazz: KClass<T>) {
             else -> "VARCHAR"
         }
 
-        val quotedName by lazy { db.quoteColumn(name) }
+        val quotedName by lazy { quoteColumn(name) }
 
         init {
             prop.isAccessible = true

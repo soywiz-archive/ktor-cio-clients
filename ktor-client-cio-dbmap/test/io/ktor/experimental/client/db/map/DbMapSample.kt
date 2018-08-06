@@ -27,9 +27,6 @@ object DbMapSample {
                 println("Creating postgre client: ${counter.getAndIncrement()}")
                 runBlocking {
                     PostgreClient(user = "ktor-cio-sample", database = "ktor-cio-sample").apply {
-                        notices {
-                            //println("NOTICE: $it")
-                        }
                     }.withInfoHook {
                         println("PG[$counter]:$this")
                     }

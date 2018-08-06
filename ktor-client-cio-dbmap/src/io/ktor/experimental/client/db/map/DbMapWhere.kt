@@ -14,7 +14,7 @@ interface Where {
     class BINARY<T : Any, R>(val klazz: KClass<T>, val prop: KProperty1<T, R>, val op: String, val cst: R) :
         Where {
         override fun render(db: DBClient): String =
-            "(" + db.quoteColumn(db.tablesInfo.get(klazz).getColumn(prop).name) + " $op " + db.quoteConstant(cst) + ")"
+            "(" + quoteColumn(db.tablesInfo.get(klazz).getColumn(prop).name) + " $op " + quoteConstant(cst) + ")"
     }
 
     class BINARY_EXPR(val left: Where, val op: String, val right: Where) :

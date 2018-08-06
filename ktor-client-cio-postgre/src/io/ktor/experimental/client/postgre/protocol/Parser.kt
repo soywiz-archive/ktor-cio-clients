@@ -10,7 +10,8 @@ class Parameter(val key: String, val value: String) : ParseResult()
 class Signal(val exception: PostgreException) : ParseResult()
 class EXCEPTION(val exception: PostgreException) : ParseResult()
 
-internal fun parsePacket(query: String, packet: PostgrePacket): ParseResult = when (packet.typeChar) {
+
+internal fun parsePacket(packet: PostgrePacket): ParseResult = when (packet.typeChar) {
     'R' -> {
         val type = packet.payload.readInt()
         when (type) {
@@ -76,8 +77,8 @@ internal fun parsePacket(query: String, packet: PostgrePacket): ParseResult = wh
         }
 
         when (packet.typeChar) {
-            'E' -> EXCEPTION(PostgreException(query, parts))
-            'N' -> Signal(PostgreException(query, parts))
+            'E' -> EXCEPTION(PostgreException(parts))
+            'N' -> Signal(PostgreException(parts))
         }
         TODO()
     }

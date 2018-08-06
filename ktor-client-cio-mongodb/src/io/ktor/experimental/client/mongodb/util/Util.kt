@@ -48,7 +48,7 @@ fun BytePacketBuilder.writePacketWithIntLength(
     writeFully(bytes)
 }
 
-fun ByteReadPacket.readPacket(count: Int = remaining, order: ByteOrder = ByteOrder.BIG_ENDIAN): ByteReadPacket {
+fun ByteReadPacket.readPacket(count: Int = remaining.toInt(), order: ByteOrder = ByteOrder.BIG_ENDIAN): ByteReadPacket {
     return readBytes(count).asReadPacket(order)
 }
 

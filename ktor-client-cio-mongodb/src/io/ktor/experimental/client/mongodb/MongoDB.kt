@@ -12,6 +12,7 @@ import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.io.*
 import kotlinx.io.core.*
 import kotlinx.io.core.ByteOrder
+import kotlinx.io.core.Closeable
 import java.io.*
 import java.net.*
 import java.util.concurrent.*

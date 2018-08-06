@@ -337,7 +337,7 @@ class MySQLClient private constructor(
                 DbRowSet(
                     DbColumns(listOf(), rowSetContext),
                     listOf<DbRow>().toSuspendingSequence(),
-                    DbRowSetInfo(query = query)
+                    DbRowSetInfo()
                 )
             }
             0xFB, 0xFE -> { // LOCAL_INFILE, PACKET_LOCAL_INFILE
@@ -447,7 +447,7 @@ class MySQLClient private constructor(
                 DbRowSet(
                     columns,
                     rows.toSuspendingSequence(),
-                    DbRowSetInfo(query = query)
+                    DbRowSetInfo()
                 )
             }
 
