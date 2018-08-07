@@ -21,7 +21,7 @@ class DBClientPool(
         }
     }
 
-    override suspend fun query(query: String): DbRowSet = pool.use { client -> client.query(query) }
+    override suspend fun query(query: String): DBResponse = pool.use { client -> client.query(query) }
 
     override fun close() {
         context.cancel()

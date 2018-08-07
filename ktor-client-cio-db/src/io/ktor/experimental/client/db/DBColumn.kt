@@ -1,6 +1,6 @@
 package io.ktor.experimental.client.db
 
-interface DbColumn {
+interface DBColumn {
     val index: Int
     val name: String
 }

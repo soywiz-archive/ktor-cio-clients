@@ -4,6 +4,8 @@ import io.ktor.experimental.client.util.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import kotlinx.io.core.*
+import java.lang.Exception
+import java.lang.RuntimeException
 import java.util.concurrent.atomic.*
 
 private class PipelineElement<TRequest : Any, TResponse : Any>(
@@ -11,11 +13,14 @@ private class PipelineElement<TRequest : Any, TResponse : Any>(
     val response: CompletableDeferred<TResponse>
 )
 
-abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
+abstract class ConnectionPipeline<TRequest : Any, TResponse : Any>(
+    pipelineSize: Int = 10
+) : Closeable {
     private val started = AtomicBoolean(false)
     open val context: Job = Job()
 
     private val writer = actor<PipelineElement<TRequest, TResponse>>(
+        capacity = pipelineSize,
         parent = context,
         start = CoroutineStart.LAZY
     ) {
@@ -23,9 +28,10 @@ abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
             onStart()
             for (element in channel) {
                 try {
-                    reader.send(element.response)
+                    reader.send(element)
                 } catch (cause: Throwable) {
-                    element.response.completeExceptionally(cause)
+                    val origin = cause.withRequest(element.request)
+                    element.response.completeExceptionally(origin)
                     throw cause
                 }
 
@@ -48,12 +54,19 @@ abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
         }
     }
 
-    private val reader = actor<CompletableDeferred<TResponse>>(
+    private val reader = actor<PipelineElement<TRequest, TResponse>>(
+        capacity = pipelineSize,
         parent = context,
         start = CoroutineStart.LAZY
     ) {
         for (element in channel) {
-            element.completeWith { this@ConnectionPipeline.receive() }
+            element.response.completeWith {
+                try {
+                    this@ConnectionPipeline.receive()
+                } catch (cause: Throwable) {
+                    throw cause.withRequest(element.request)
+                }
+            }
         }
     }
 
@@ -75,3 +88,10 @@ abstract class ConnectionPipeline<TRequest : Any, TResponse : Any> : Closeable {
         writer.close()
     }
 }
+
+class PipelineException(val request: Any, override val cause: Throwable): RuntimeException() {
+    override val message: String = "Fail to execute: $request"
+}
+
+private fun Throwable.withRequest(request: Any): Throwable = PipelineException(request, this)
+

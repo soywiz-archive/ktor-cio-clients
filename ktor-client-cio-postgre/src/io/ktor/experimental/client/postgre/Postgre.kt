@@ -8,14 +8,12 @@ import java.net.*
 // https://www.postgresql.org/docs/11/static/index.html
 
 class PostgreClient(
-    val address: InetSocketAddress,
+    address: InetSocketAddress,
     val database: String = "default",
     val user: String = "root",
-    val password: String? = null
+    password: String? = null
 ) : DBClient, WithProperties by WithProperties.Mixin() {
-    override val context: Job = Job().apply {
-        invokeOnCompletion { close() }
-    }
+    override val context: Job = Job()
 
     /**
      * TBD: use multiple pipelines
@@ -24,7 +22,7 @@ class PostgreClient(
         address, user, password, database
     )
 
-    override suspend fun query(queryString: String): DbRowSet = connection.query(queryString)
+    override suspend fun query(queryString: String): DBResponse = connection.query(queryString)
 
     override fun close() {
         connection.close()

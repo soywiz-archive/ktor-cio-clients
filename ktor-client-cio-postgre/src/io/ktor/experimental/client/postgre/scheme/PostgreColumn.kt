@@ -8,4 +8,4 @@ data class PostgreColumn(
     val typeSize: Int,
     val typeMod: Int,
     val text: Boolean
-) : DbColumn
+) : DBColumn

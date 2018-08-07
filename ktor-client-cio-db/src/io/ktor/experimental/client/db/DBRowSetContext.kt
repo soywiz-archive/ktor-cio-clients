@@ -4,7 +4,7 @@ import java.nio.charset.*
 import java.text.*
 import java.util.*
 
-data class DbRowSetContext(
+data class DBRowSetContext(
     val charset: Charset = Charsets.UTF_8,
     val timeFormat: SimpleDateFormat = SimpleDateFormat("HH:mm:ss"),
     val dateFormat: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd"),
@@ -13,7 +13,7 @@ data class DbRowSetContext(
     private val formats = listOf(timeFormat, dateFormat, datetimeFormat)
 
     companion object {
-        val DEFAULT = DbRowSetContext()
+        val DEFAULT = DBRowSetContext()
     }
 
     fun date(str: String): Date {

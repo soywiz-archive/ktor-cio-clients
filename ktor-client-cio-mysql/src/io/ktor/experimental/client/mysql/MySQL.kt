@@ -107,7 +107,7 @@ class MySQLClient private constructor(
     private val charset = Charsets.UTF_8
 
     private val rowSetContext by lazy {
-        DbRowSetContext(
+        DBRowSetContext(
             charset = charset,
             timeFormat = TIME_FORMAT,
             dateFormat = DATE_FORMAT,
@@ -325,7 +325,7 @@ class MySQLClient private constructor(
     }
 
 
-    private suspend fun readResponse(query: String): DbRowSet = readPacket {
+    private suspend fun readResponse(query: String): DBRowSet = readPacket {
         val kind = readU8()
         when (kind) {
             0x00 -> { // OK
@@ -334,9 +334,9 @@ class MySQLClient private constructor(
                 val serverStatus = readU16_le()
                 val warningCount = readU16_le()
                 val info = readBytesAvailable()
-                DbRowSet(
-                    DbColumns(listOf(), rowSetContext),
-                    listOf<DbRow>().toSuspendingSequence(),
+                DBRowSet(
+                    DBColumns(listOf(), rowSetContext),
+                    listOf<DBRow>().toSuspendingSequence(),
                     DbRowSetInfo()
                 )
             }
@@ -369,7 +369,7 @@ class MySQLClient private constructor(
                     0xFD -> readU24_le()
                     else -> kind
                 }
-                val columns = DbColumns((0 until columnCount).map { index ->
+                val columns = DBColumns((0 until columnCount).map { index ->
                     // https://mariadb.com/kb/en/library/resultset/#column-definition-packet
                     readPacket {
                         MysqlColumn(
@@ -396,7 +396,7 @@ class MySQLClient private constructor(
                 }
 
                 // https://mariadb.com/kb/en/library/resultset-row/
-                val rows = arrayListOf<DbRow>()
+                val rows = arrayListOf<DBRow>()
                 try {
                     while (true) {
                         rows += readPacket { packet ->
@@ -438,13 +438,13 @@ class MySQLClient private constructor(
                                 }
                                 */
                             }
-                            DbRow(columns, cells)
+                            DBRow(columns, cells)
                         }
                     }
                 } catch (e: EOFException) {
 
                 }
-                DbRowSet(
+                DBRowSet(
                     columns,
                     rows.toSuspendingSequence(),
                     DbRowSetInfo()
@@ -460,7 +460,7 @@ class MySQLClient private constructor(
         readResponse("hanshake")
     }
 
-    override suspend fun query(query: String): DbRowSet {
+    override suspend fun query(query: String): DBRowSet {
         // @TODO: Wait/force completion of the previous query
         packetNum = 0
         writeQuery(query)
@@ -537,7 +537,7 @@ data class MysqlColumn(
     val fieldDetailFlag: Int, // MysqlFieldDetail
     val decimals: Int,
     val unused: Int
-) : DbColumn {
+) : DBColumn {
     override val name get() = column
     override fun toString(): String = "MysqlColumn($columnAlias)"
 }

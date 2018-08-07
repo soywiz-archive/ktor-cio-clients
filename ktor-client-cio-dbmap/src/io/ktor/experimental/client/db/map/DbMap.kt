@@ -102,7 +102,7 @@ class TableInfo<T : Any>(val db: DBClient, val klazz: KClass<T>) {
         return out
     }
 
-    fun toItem(row: DbRow): T {
+    fun toItem(row: DBRow): T {
         val constructor = primaryConstructor
         val params = constructor.parameters
         val args = arrayOfNulls<Any?>(params.size)

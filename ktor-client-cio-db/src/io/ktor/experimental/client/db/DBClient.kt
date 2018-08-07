@@ -11,7 +11,7 @@ interface DBClient : WithProperties, Closeable {
      */
     val context: Job
 
-    suspend fun query(query: String): DbRowSet
+    suspend fun query(query: String): DBResponse
 
     suspend fun transactionStart(): Unit = run { query("START TRANSACTION;") }
     suspend fun transactionRollback(): Unit = run { query("ROLLBACK TRANSACTION;") }

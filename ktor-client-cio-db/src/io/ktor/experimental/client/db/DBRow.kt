@@ -1,6 +1,6 @@
 package io.ktor.experimental.client.db
 
-class DbRow(val columns: DbColumns, val cells: List<ByteArray?>) : List<Any?> {
+class DBRow(val columns: DBColumns, val cells: List<ByteArray?>) : List<Any?> {
     val context get() = columns.context
 
     fun bytes(key: Int) = cells.getOrNull(key)
@@ -17,7 +17,7 @@ class DbRow(val columns: DbColumns, val cells: List<ByteArray?>) : List<Any?> {
 
     operator fun get(key: String) = bytes(key)
 
-    val pairs get() = columns.columns.map { it.name }.zip(typedList)
+    val pairs get() = columns.map { it.name }.zip(typedList)
     override fun toString(): String = "{${pairs.map { "${it.first}=${it.second}" }.joinToString(", ")}}"
 
     //////////////////////////////////////////////////////////////

@@ -7,13 +7,13 @@ class DBClientWithStats(
     val handler: (info: DbQueryInfo) -> Unit
 ) : DBClient by client {
 
-    override suspend fun query(query: String): DbRowSet {
+    override suspend fun query(query: String): DBResponse {
         var error: Throwable? = null
         var info: DbRowSetInfo? = null
         val start = System.currentTimeMillis()
         try {
             val result = client.query(query)
-            info = result.info
+            info = result.rows.info
             return result
         } catch (e: Throwable) {
             error = e
