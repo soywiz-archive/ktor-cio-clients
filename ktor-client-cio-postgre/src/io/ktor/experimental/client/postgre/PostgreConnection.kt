@@ -47,7 +47,7 @@ class PostgreConnection(
     override suspend fun receive(): PostgreRawResponse {
         var info = ""
         val rows = mutableListOf<List<ByteArray?>>()
-        var columns: List<PostgreColumn>? = null
+        var columns: List<PostgreColumn> = emptyList()
         var notice: DBNotice? = null
 
         read@ while (true) {

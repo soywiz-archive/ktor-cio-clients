@@ -36,6 +36,7 @@ fun main(args: Array<String>) = runBlocking {
     ).log()
 
 
+//    SELECT * FROM pg_catalog.pg_tables;
     val time = measureTimeMillis {
         (0..1000).map { id ->
             async {
@@ -52,7 +53,7 @@ fun main(args: Array<String>) = runBlocking {
         .log()
 
     for (row in response.rows) {
-        row.map { bytes -> bytes?.let{ String(it) } ?: "null" }.toList().log()
+        row.map { it?.string() ?: "null" }.toList().log()
     }
 
     client.close()
