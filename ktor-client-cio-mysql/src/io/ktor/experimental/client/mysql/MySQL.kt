@@ -325,7 +325,7 @@ class MySQLClient private constructor(
     }
 
 
-    private suspend fun readResponse(query: String): DBRowSet = readPacket {
+    private suspend fun readResponse(query: String): DBResponseRaws = readPacket {
         val kind = readU8()
         when (kind) {
             0x00 -> { // OK
@@ -334,7 +334,7 @@ class MySQLClient private constructor(
                 val serverStatus = readU16_le()
                 val warningCount = readU16_le()
                 val info = readBytesAvailable()
-                DBRowSet(
+                DBResponseRaws(
                     DBColumns(listOf(), rowSetContext),
                     listOf<DBRow>().toSuspendingSequence(),
                     DbRowSetInfo()
@@ -444,7 +444,7 @@ class MySQLClient private constructor(
                 } catch (e: EOFException) {
 
                 }
-                DBRowSet(
+                DBResponseRaws(
                     columns,
                     rows.toSuspendingSequence(),
                     DbRowSetInfo()
@@ -460,7 +460,7 @@ class MySQLClient private constructor(
         readResponse("hanshake")
     }
 
-    override suspend fun query(query: String): DBRowSet {
+    override suspend fun query(query: String): DBResponseRaws {
         // @TODO: Wait/force completion of the previous query
         packetNum = 0
         writeQuery(query)

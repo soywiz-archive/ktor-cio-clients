@@ -2,7 +2,7 @@ package io.ktor.experimental.client.db
 
 class DBResponse(
     val info: String,
-    val rows: DBRowSet,
+    val rows: DBResponseRaws,
     val notice: DBNotice? = null
 ) {
     override fun toString(): String = buildString {

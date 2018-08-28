@@ -2,8 +2,8 @@ package io.ktor.experimental.client.db
 
 import io.ktor.experimental.client.util.*
 
-class DBRowSet(
+class DBResponseRaws(
     val columns: DBColumns,
-    rows: SuspendingSequence<DBRow>,
+    val rows: List<DBRow>,
     val info: DbRowSetInfo
-) : SuspendingSequence<DBRow> by rows
+)

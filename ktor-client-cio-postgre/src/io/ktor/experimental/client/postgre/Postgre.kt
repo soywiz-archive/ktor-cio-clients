@@ -1,8 +1,8 @@
 package io.ktor.experimental.client.postgre
 
-import io.ktor.experimental.client.db.*
-import io.ktor.experimental.client.util.*
+import io.ktor.experimental.client.postgre.scheme.*
 import kotlinx.coroutines.experimental.*
+import kotlinx.io.core.*
 import java.net.*
 
 // https://www.postgresql.org/docs/11/static/index.html
@@ -12,19 +12,20 @@ class PostgreClient(
     val database: String = "default",
     val user: String = "root",
     password: String? = null
-) : DBClient, WithProperties by WithProperties.Mixin() {
-    override val context: Job = Job()
+) : Closeable {
+    val context: Job = CompletableDeferred<Unit>()
 
     /**
      * TBD: use multiple pipelines
      */
     private val connection: PostgreConnection = PostgreConnection(
-        address, user, password, database
+        address, user, password, database, context
     )
 
-    override suspend fun query(queryString: String): DBResponse = connection.query(queryString)
+    suspend fun query(queryString: String): PostgreRawResponse = connection.query(queryString)
 
     override fun close() {
+        (context as CompletableDeferred<Unit>).complete(Unit)
         connection.close()
     }
 }

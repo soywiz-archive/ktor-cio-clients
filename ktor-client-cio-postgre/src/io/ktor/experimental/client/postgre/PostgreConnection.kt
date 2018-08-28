@@ -2,7 +2,7 @@ package io.ktor.experimental.client.postgre
 
 import io.ktor.experimental.client.db.*
 import io.ktor.experimental.client.postgre.protocol.*
-import io.ktor.experimental.client.util.*
+import io.ktor.experimental.client.postgre.scheme.*
 import io.ktor.experimental.client.util.sync.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
@@ -17,8 +17,9 @@ private val POSTGRE_SELECTOR_MANAGER = ActorSelectorManager(DefaultDispatcher)
 class PostgreConnection(
     val address: InetSocketAddress,
     val user: String, val password: String?,
-    val database: String
-) : ConnectionPipeline<String, DBResponse>() {
+    val database: String,
+    override val context: Job
+) : ConnectionPipeline<String, PostgreRawResponse>() {
     private lateinit var socket: Socket
     private lateinit var input: ByteReadChannel
     private lateinit var output: ByteWriteChannel
@@ -43,10 +44,10 @@ class PostgreConnection(
         }
     }
 
-    override suspend fun receive(): DBResponse {
-        var columns = DBColumns(listOf())
-        val rows = arrayListOf<DBRow>()
+    override suspend fun receive(): PostgreRawResponse {
         var info = ""
+        val rows = mutableListOf<List<ByteArray?>>()
+        var columns: List<PostgreColumn>? = null
         var notice: DBNotice? = null
 
         read@ while (true) {
@@ -55,10 +56,10 @@ class PostgreConnection(
 
             when (packet.type) {
                 BackendMessage.ROW_DESCRIPTION -> {
-                    columns = DBColumns(payload.readColumns())
+                    columns = payload.readColumns()
                 }
                 BackendMessage.DATA_ROW -> {
-                    payload.readRow()
+                    rows += payload.readRow()
                 }
                 BackendMessage.COMMAND_COMPLETE -> {
                     info = payload.readCString()
@@ -82,10 +83,8 @@ class PostgreConnection(
             check(payload.remaining == 0L)
         }
 
-        return DBResponse(
-            info,
-            DBRowSet(columns, rows.toSuspendingSequence(), DbRowSetInfo()),
-            notice
+        return PostgreRawResponse(
+            info, notice, columns, rows
         )
     }
 

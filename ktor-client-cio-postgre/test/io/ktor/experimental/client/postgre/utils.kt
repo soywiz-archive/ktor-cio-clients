@@ -1,6 +1,5 @@
 package io.ktor.experimental.client.postgre
 
-import io.ktor.experimental.client.db.*
 import kotlinx.coroutines.experimental.*
 import kotlinx.io.core.*
 import java.net.*
@@ -52,10 +51,8 @@ fun main(args: Array<String>) = runBlocking {
     val response = client.query("SELECT * FROM persons;")
         .log()
 
-    val rows = response.rows.iterator()
-    while (rows.hasNext()) {
-        rows.next()
-            .log()
+    for (row in response.rows) {
+        row.map { bytes -> bytes?.let{ String(it) } ?: "null" }.toList().log()
     }
 
     client.close()
